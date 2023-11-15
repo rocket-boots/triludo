@@ -1,0 +1,42 @@
+{
+  "name": "grid-rez-alpha",
+  "version": "1.1.0",
+  "description": "game",
+  "main": "./src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "serve": "npx http-server",
+    "rollup": "rollup --config rollup.config.mjs",
+    "build": "npm run rollup",
+    "watch": "rollup --config rollup.config.mjs -w",
+    "lint": "eslint ./src/*.js"
+  },
+  "keywords": [
+    "html5",
+    "esm",
+    "js",
+    "javascript",
+    "game",
+    "three.js"
+  ],
+  "author": "Luke Nickerson",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^24.0.1",
+    "@rollup/plugin-node-resolve": "^15.0.2",
+    "http-server": "^14.1.1",
+    "rocket-boots-eslint": "github:rocket-boots/rocket-boots-eslint",
+    "rollup": "^3.20.2"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "cannon-es-debugger": "^1.0.0",
+    "howler": "^2.2.3",
+    "keyboard-commander": "github:rocket-boots/keyboard-commander#v0.2.0",
+    "noise-esm": "github:rocket-boots/noise-esm#v1.0.0",
+    "rocket-boots": "github:rocket-boots/rocket-boots#semver:v0.12.1",
+    "rocket-boots-three-toolbox": "github:rocket-boots/rocket-boots-three-toolbox",
+    "sound-controller": "github:rocket-boots/sound-controller",
+    "three": "^0.151.3"
+  }
+}

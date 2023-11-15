@@ -1,0 +1,76 @@
+.vortex {
+	position: absolute;
+	width: 100vmin;
+	height: 100vmin;
+	border-radius: 100%;
+	background: #000;
+	overflow: hidden;
+}
+.tunnel,
+.tunnel::before,
+.tunnel::after,
+.ring {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: radial-gradient(
+		circle, rgba(2,0,36,.25) 0%, 
+		#352b40 15%,
+		#d8b1a1 16%,
+		#cc925e 17%,
+		#508d76 18%,
+		#933f45 19%,
+		#653d48 20%,
+		#352b40 21%,
+		#535c89 35%,
+		rgba(123, 153, 200,.5) 90%, 
+		rgba(0,0,0,0) 100%
+	);
+	color: rgb(123, 153, 200);
+	border: solid 5px rgba(255, 255, 255, 0.1);
+	animation: tunnel-in 3.2s ease-in infinite;
+	border-radius: 50%;
+}
+.tunnel::before { animation-delay: 1s; }
+.tunnel::after { animation-delay: 2s; }
+
+.tunnel:nth-child(2) {
+	animation-delay: 0.75s;
+	border-radius: 50%;
+}
+.tunnel:nth-child(3) {
+	animation-delay: 1.5s;
+	border-radius: 50%;
+}
+.tunnel:nth-child(4) {
+	animation-delay: 2.25s;
+	animation-duration: 5s;
+	border-radius: 40%;
+}
+
+.ring,
+.ring::before,
+.ring::after {
+	border: solid 1px rgba(255, 255, 255, 0.5);
+	background: radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(255, 255, 255, 0.1) 100%);
+	animation-delay: 2s;
+}
+
+@keyframes tunnel-in {
+	0% {
+	transform: scale(0);
+	opacity: 1;
+	}
+	10% {
+	opacity: .75;
+	}
+	80% {
+	opacity: .8;
+	}
+	100% {
+	transform: scale(5) rotate(720deg);
+	opacity: 0;
+	}
+}

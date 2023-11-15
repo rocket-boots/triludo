@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>Grid/Rez Alpha</title>
+	<meta charset="utf-8">
+	<meta name="description" content="3D Three.js JavaScript Web Game">
+	<meta name="author" content="Luke Nickerson">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Acme&family=Arvo&display=swap" rel="stylesheet">
+	<link href="./styles/vortex-tunnel.css" rel="stylesheet" />
+	<link href="./styles/saur.css" rel="stylesheet" />
+	<link rel="icon" type="image/png" sizes="32x32" href="./images/favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="./images/favicon-16x16.png">
+</head>
+<body scroll="no">
+	<main id="main">
+		<div id="map"></div>
+		<!-- <img src="./images/BritanniaHeightMap2.jpg" id="x" style="width: 100px" /> -->
+		<div id="hud" class="full-screen ui-hide">
+			<div class="hud-row">
+				<div>
+					<!-- put AI above here -->					
+					<div id="log">
+						<!-- [J] -->Log
+						<ul id="log-list"></ul>
+					</div>
+				</div>
+				<div class="hud-world-clock-container">
+					<div id="world-clock" class="clock">
+						<div class="clock-text"></div>
+						<div class="clock-minute-hand"></div>
+						<div class="clock-hour-hand"></div>
+					</div>
+				</div>
+				<div id="scanner">
+					Scanner shows the proximity of your tech:
+					<ul id="scans"></ul>
+					<div id="nearest-scan"></div>
+				</div>
+			</div>
+			<div class="hud-row">
+				<!-- leave empty? -->
+				<div id="interaction">
+					<div id="crosshairs" class="crosshairs-horizontal">
+						<div class="crosshairs-vertical"></div>
+					</div>
+					<div id="interaction-details" class="ui-hide">
+						<div id="interaction-target"><!-- Item --></div>
+						<div id="interaction-action">
+							[E] <span id="interaction-tip"></span>
+							<!-- [E] Dig -->
+							<span id="interaction-action-name"></span>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="hud-row">
+				<div>
+					<!-- Stats -->
+					<ul id="stat-list"></ul>
+					[Backspace] Stop, [WASD] Walk, [Shift] Sprint
+				</div>
+				<div id="inv">
+					<ul id="inv-list"></ul>
+				</div>
+			</div>
+		</div>
+		<div id="debug"></div>
+		<div id="win" class="full-screen ui-hide">
+			<div class="vortex">
+				<div class="tunnel">
+				</div>
+				<div class="tunnel">
+				</div>
+				<div class="tunnel ring">
+				</div>
+				<div class="tunnel ring">
+				</div>
+			</div>
+			<div class="win-conclusion">
+				<h1>You Travel Back to Your Time</h1>
+				<p>... To Be Continued?</p>
+				<div class="clock">
+					<div class="clock-text">You Win</div>
+					<div class="clock-second-hand"></div>
+					<div class="clock-minute-hand"></div>
+					<div class="clock-hour-hand"></div>
+				</div>
+			</div>
+			<div class="win-next">
+				<p>
+					Congratulations! You've won the game.
+					To play again you can refresh the page.
+				</p>
+				<p>We'd love to hear your feedback:</p>
+				<ul>
+					<li><a href="https://mastodon.gamedev.place/@deathray">@deathray on Mastodon.gamedev.place</a></li>
+					<li><a href="https://deathray.itch.io/">https://deathray.itch.io/</a></li>
+				</ul>
+				<p>
+					What did you love? What did you hate?
+					Do you want to see the game or game engine developed more?
+				</p>
+			</div>
+		</div>
+		<article id="main-menu" class="full-screen">
+			<div class="main-menu-background full-screen">
+
+			</div>
+			<div class="main-menu-content full-screen">
+				<header class="main-menu-header">
+					<h1 class="title"><span class="title-chrono">Grid</span><span class="title-saur">Rez</span></h1>
+				</header>
+				<div class="main-menu-row">
+					<section class="credits">
+						<h1>Credits</h1>
+						<p>
+							Code, game design, etc. by Luke N.
+							<br>(Deathray).
+						</p>
+						<p>
+							Made in JavaScript, CSS, HTML, using Three.js and Rocket-boots.
+						</p>
+						<p>
+							Music by
+							<ul>
+								<li>Elijah Carrick</li>
+								<li>
+									<a href="https://pixabay.com/users/burnishedbronze-20676240/?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=music&amp;utm_content=10304">A. Ewers (BurnishedBronze)</a>
+										<br>from <a href="https://pixabay.com//?utm_source=link-attribution&amp;utm_medium=referral&amp;utm_campaign=music&amp;utm_content=10304">Pixabay</a>
+								</li>
+							</ul>
+						</p>
+						<p>
+							3D Models by
+							<ul>
+								<li><a href="https://quaternius.com/">Quaternius</a></li>
+								<li>
+									"Poly by Google" [CC-BY]
+									<br>via <a href="https://poly.pizza/u/Poly%20by%20Google">Poly Pizza</a>
+								</li>
+							</ul>
+						</p>
+						<p>
+							Color palette (<a href="https://lospec.com/palette-list/nanner-jam">Nanner Jam</a>) by Afterimage
+						</p>
+						<p>
+							Made in 2023 for Gamedev.js Jam
+						</p>
+					</section>
+					<section id="menu">
+						<button type="button" id="start-game-button">🖥️ Enter the Grid</button>
+						<div>
+							<input type="checkbox" checked="checked" id="music-checkbox" />
+							<label for="music-checkbox">Music</label>
+						</div>
+						<div>
+							<input type="checkbox" checked="checked" id="sound-fx-checkbox" />
+							<label for="sound-fx-checkbox">Sound Effects</label>
+						</div>
+						<div class="version">v1.2.0</div>
+					</section>
+					<div id="main-menu-loading">
+						<div class="clock">
+							<div class="clock-text">Loading...</div>
+							<div class="clock-second-hand"></div>
+							<div class="clock-minute-hand"></div>
+							<div class="clock-hour-hand"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</article>
+		<div id="intro" class="full-screen ui-hide">
+			<div class="vortex">
+				<div class="tunnel">
+				</div>
+				<div class="tunnel">
+				</div>
+				<div class="tunnel ring">
+				</div>
+				<div class="tunnel ring">
+				</div>
+			</div>
+			<div class="intro-story">
+				<p>
+					You enter your time machine...
+				</p>
+				<p>
+					To go back and make things better...
+				</p>
+				<p>
+					But something's gone wrong...
+				</p>
+				<p>
+					You're going too far back,
+					<br />and the machine rumbles...
+				</p>
+			</div>
+		</div>
+		<div id="dead" class="full-screen ui-hide">
+			<h1>You <span style="opacity: 0.5;">Almost</span> Died</h1>
+			<p>
+				Dinosaurs are big and dangerous.
+				<br>Luckily your time machine has an auto-teleporation feature.
+			</p>
+			<p>
+				Please wait...
+			</p>
+		</div>
+		<div id="loading" class="full-screen">
+			<div class="clock">
+				<div class="clock-text">Loading...</div>
+				<div class="clock-second-hand"></div>
+				<div class="clock-minute-hand"></div>
+				<div class="clock-hour-hand"></div>
+			</div>
+		</div>
+	</main>
+	<script type="module" src="./build/game_bundle.js"></script>
+	<!-- <script type="module" src="./src/game.js"></script> -->
+</body>
+</html>
