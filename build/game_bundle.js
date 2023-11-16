@@ -66320,6 +66320,7 @@ var game_bundle = (function () {
 				ActorClass = Entity, // recommended - for world
 				ItemClass = Entity, // recommended - for world
 				SoundControllerClass = SoundController, // recommended
+				TerrainGeneratorClass, // recommended
 				states, // recommended
 				minMouseWheel = -100,
 				maxMouseWheel = 100,
@@ -66335,7 +66336,7 @@ var game_bundle = (function () {
 			this.mouseWheelWatcher = new MouseWheelWatcher({ min: minMouseWheel, max: maxMouseWheel });
 			this.gameScene = new SceneClass({ models: options.models });
 			this.world = new WorldClass({
-				ActorClass, ItemClass,
+				ActorClass, ItemClass, TerrainGeneratorClass,
 			});
 			this.interface = new InterfaceClass();
 			this.players = [];
@@ -75455,401 +75456,6 @@ var game_bundle = (function () {
 	  };
 	}
 
-	const MAX_ACTORS = 5000;
-	const SECONDS_PER_HOUR = 60 * 60;
-	const SECONDS_PER_DAY = SECONDS_PER_HOUR * 24;
-	const START_WORLD_TIME = 60 * 60 * 8; // 7 AM, in seconds
-
-	/**
-	 * A SimWorld is some kind of "space", a time, and a collection
-	 * of entities that live in that space and time
-	 */
-	class SimWorld {
-		constructor(options = {}) {
-			const {
-				ActorClass = Entity, // recommended
-				ItemClass = Entity, // recommended
-				startWorldTime, // optional
-				physics = true,
-			} = options;
-			// Classes
-			this.ItemClass = ItemClass;
-			this.ActorClass = ActorClass;
-			// Time
-			this.lastDeltaT = 0; // just for debug/tracking purposes
-			// How spaced-out do you want the spawned actors
-			this.spawnActorDistance = 1000;
-			// Min spawn distance should be greater than the sight view of enemies so that they
-			// don't spawn and instantly attack.
-			// Max spawn distance should be somwhat similar to half the size of all the chunks being shown
-			this.spawnRadii = [this.spawnActorDistance, 3500];
-			this.despawnRadius = this.spawnRadii[1] * 1.5;
-			// this.loop = new Looper();
-			this.players = [];
-			this.spirits = [];
-			this.actors = [];
-			this.items = [];
-			this.tick = 0;
-			this.worldTime = startWorldTime || START_WORLD_TIME; // In seconds
-			this.worldTimePerGameTime = 100; // originally 200
-			this.physicsWorld = new World({
-				gravity: new Vec3(0, 0, -90.8), // TODO: determine based on grid units to meter conversion
-			});
-		}
-
-		setup() {
-			// TODO: Remove test code below
-			const groundBody = new Body({
-				type: Body.STATIC,
-				shape: new Plane(),
-			});
-			groundBody.quaternion.setFromEuler(0, 0, 0); // (-Math.PI / 2, 0, 0);
-			this.physicsWorld.addBody(groundBody);
-			const radius = 500;
-			const sphereBody = new Body({
-				mass: 5,
-				shape: new Sphere(radius),
-			});
-			sphereBody.position.set(0, 2000, 2000);
-			this.physicsWorld.addBody(sphereBody);
-			this.cannonDebugger = new CannonDebugger(this.debugScene, this.physicsWorld, { color: 0xff0000 });
-		}
-
-		update(t) {
-			this.tick += 1;
-			if (this.tick > 1000000) this.tick = 0;
-			const deltaTWorldTime = (t / 1000) * this.worldTimePerGameTime;
-			this.worldTime = (this.worldTime + deltaTWorldTime) % SECONDS_PER_DAY;
-			this.actors.forEach((actor) => actor.update(t, this));
-			this.physicsWorld.fixedStep();
-			this.cannonDebugger.update();
-			return {};
-		}
-
-		getHour() {
-			return Math.floor(this.worldTime / SECONDS_PER_HOUR);
-		}
-
-		getMinutes() {
-			return Math.floor(this.worldTime / 60) % 60;
-		}
-
-		getRandomSpawnCoords(coords) {
-			const [minRadius, maxRadius] = this.spawnRadii;
-			const r = minRadius + Random$1.randomInt(maxRadius - minRadius);
-			const angle = Random$1.randomAngle();
-			const [x, y] = ArrayCoords.polarToCartesian(r, angle);
-			return ArrayCoords.add(coords, [x, y, 0]);
-		}
-
-		makeCharacter(charProperties) {
-			const character = new this.ActorClass(charProperties);
-			character.isCharacter = true;
-			return character;
-		}
-
-		addNewCharacter(charProperties) {
-			const character = this.makeCharacter(charProperties);
-			this.actors.push(character);
-			return character;
-		}
-
-		makeActor(opt = {}) {
-			return (new this.ActorClass(opt));
-		}
-
-		addNewActor(opt) {
-			if (this.actors.length >= MAX_ACTORS) return null;
-			const actor = this.makeActor(opt);
-			this.actors.push(actor);
-			return actor;
-		}
-
-		makeItem(itemData = {}) {
-			const item = new this.ItemClass(itemData);
-			if (item.randomAtRadius) {
-				const angle = Random$1.randomAngle();
-				const [x, y] = ArrayCoords.polarToCartesian(Number(item.randomAtRadius), angle);
-				item.coords = [x, y, 0];
-			}
-			return item;
-		}
-
-		addNewItem(itemData = {}) {
-			const item = this.makeItem(itemData);
-			this.items.push(item);
-			return item;
-		}
-
-		/** Returns an array of (0) the distance to the nearest thing, and (1) the thing */
-		static findNearest(arr, coords, filterFn) {
-			const nearest = arr.reduce((previousValue, thing) => {
-				// if there's a filter function defined, then use it to
-				// skip considering certain things
-				if (filterFn && !filterFn(thing)) return previousValue;
-				const [nearestSoFar] = previousValue;
-				const distance = ArrayCoords.getDistance(thing.coords, coords);
-				return (distance < nearestSoFar) ? [distance, thing] : previousValue;
-			}, [Infinity, null]);
-			return nearest;
-		}
-
-		findNearestActor(coords, filterFn) {
-			return SimWorld.findNearest(this.actors, coords, filterFn);
-		}
-
-		findNearestItem(coords, filterFn) {
-			return SimWorld.findNearest(this.items, coords, filterFn);
-		}
-
-		/** Find all items that are interactable (not necessary within range though) */
-		findNearestInteractableItem(coords) {
-			return SimWorld.findNearest(this.items, coords, this.ItemClass.isItemInteractable);
-		}
-
-		/** Find all items that are interactable (not necessary within range though) */
-		findNearestInRangeInteractableItem(coords) {
-			const filter = (item) => this.ItemClass.isItemInRangeInteractable(item, coords);
-			// TODO: this could be made more efficient since we're checking distance twice
-			// (once in isItemInRangeInteractable, once in findNearest)
-			return SimWorld.findNearest(this.items, coords, filter);
-		}
-
-		/** Will mutate certain things (array items) to set the `remove` property */
-		removeLost(things = [], despawnCenter = [0, 0, 0]) {
-			things.forEach((thing) => {
-				if (thing.isCharacter || thing.important) return;
-				if (typeof thing.despawnRadius !== 'number') return;
-				const distance = ArrayCoords.getDistance(despawnCenter, thing.coords);
-				// eslint-disable-next-line no-param-reassign
-				if (distance > this.despawnRadius) thing.remove = true;
-			});
-		}
-
-		despawn(despawnCenter) {
-			this.removeLost(this.actors, despawnCenter);
-			this.removeLost(this.items, despawnCenter);
-			this.cleanItems();
-			this.cleanActors();
-		}
-
-		static cleanRemoved(arr) {
-			for (let i = arr.length - 1; i >= 0; i -= 1) {
-				if (arr[i].remove) arr.splice(i, 1);
-			}
-		}
-
-		cleanItems() {
-			SimWorld.cleanRemoved(this.items);
-		}
-
-		cleanActors() {
-			SimWorld.cleanRemoved(this.actors);
-		}
-
-		getSun() {
-			const hr = this.getHour();
-			// Angle of 0 = fully risen, 12 = fully hidden
-			const sunLightAngle = (((hr / 24) * TAU$1) + PI$1) % TAU$1;
-			// TODO: Change the color of the sun light?
-			// TODO: Set min and max intensity values
-			return { sunLightAngle };
-		}
-	}
-
-	const defaultMass = 10000;
-
-	const defaultDino = {
-		name: 'Dino',
-		autonomous: true,
-		isDinosaur: true,
-		wandering: true,
-		size: 60,
-		damageRange: 60,
-		heightSizeOffset: 0,
-		// color: [randColor(), randColor(), randColor()],
-		walkForce: 900 * defaultMass,
-		mass: defaultMass,
-		attentionDistance: 1000,
-		fleeDistance: 0,
-		huntDistance: 0,
-		renderAs: 'model', // renderAs: 'sphere',
-		turnSpeed: TAU$1 / 3000,
-	};
-	const dinos = {
-		apat: {
-			...defaultDino,
-			model: 'apat',
-			faction: 'herbivore',
-			name: 'Dino apat',
-			mass: defaultMass * 2.5,
-			turnSpeed: TAU$1 / 5000,
-		},
-		para: {
-			...defaultDino,
-			model: 'para',
-			faction: 'herbivore',
-			name: 'Dino para',
-			mass: defaultMass * 0.6,
-		},
-		steg: {
-			...defaultDino,
-			model: 'steg',
-			faction: 'herbivore',
-			name: 'Dino steg',
-			mass: defaultMass,
-		},
-		trex: {
-			...defaultDino,
-			model: 'trex',
-			faction: 'trex',
-			name: 'Dino trex',
-			mass: defaultMass * 1.5,
-			huntDistance: 500,
-		},
-		tric: {
-			...defaultDino,
-			model: 'tric',
-			faction: 'tric',
-			name: 'Dino tric',
-			mass: defaultMass * 1.3,
-		},
-		velo: {
-			...defaultDino,
-			model: 'velo',
-			faction: 'velo',
-			name: 'Dino velo',
-			mass: defaultMass * 0.5,
-			huntDistance: 500,
-		},
-	};
-
-	const PART_SIZE = 20;
-	const PART = {
-		name: 'Time travel machine part',
-		randomAtRadius: 100,
-		size: PART_SIZE,
-		rooted: true,
-		scannable: true,
-		timeTravelPart: true,
-		interactionRange: PART_SIZE + 40,
-		interactionAction: 'Dig',
-		interactionEffort: 100,
-		heightSizeOffset: 0,
-		inventoryDescription: 'This should be useful for rebuilding your time machine.',
-		interactionResult: {
-			modify: {
-				heightSizeOffset: 0.5,
-				rooted: false,
-				// collectible: true,
-				interactionAction: 'Pick up',
-				interactionEffort: 0,
-				interactionResult: { pickUp: true },
-			},
-		},
-		castShadow: true,
-		renderAs: 'model',
-		model: 'gear',
-	};
-	const PARTS = [
-		{ ...PART, randomAtRadius: 400, model: 'sputnik', heightSizeOffset: -0.5 },
-		{ ...PART, randomAtRadius: 600 },
-		{ ...PART, randomAtRadius: 700, model: 'computer', heightSizeOffset: -0.5 },
-		{ ...PART, randomAtRadius: 1200, model: 'commandPod', heightSizeOffset: -0.25 },
-		{ ...PART, randomAtRadius: 2200, model: 'sputnik' },
-		{ ...PART, randomAtRadius: 2000 },
-		{ ...PART, randomAtRadius: 3000, model: 'sputnik' },
-		{ ...PART, randomAtRadius: 4000, model: 'computer' },
-		{ ...PART, randomAtRadius: 5000 },
-	];
-	// Powers:
-	// - GPS Gravitation-wave Positioning System -- provides x,y,z coordinates
-	// - Compass --- provides N, S, E, W compass
-	// - Scanner --- provides some way to detect parts
-	// - threat monitor --- beeps when a creature neatby is aggro'd
-	// - rocket boots --- big jumps
-	// - Chrono-collector --- collects time resource
-	// - time-stopper --- drops a bubble that stops everyone but character in a radius
-	// - ranged time-stopper --- time bubble near where it's fired
-	// - overhead camera --- provides a map view
-	// - scanning visor --- provides a wireframe view with things highlighted
-	// - drone --- provides a mobile viewing system
-	// - laser gun
-	const PARTS_NEEDED = 6;
-	const ITEMS = [
-		...PARTS,
-		{
-			name: 'time machine',
-			isTimeMachine: true,
-			randomAtRadius: 10,
-			rooted: true,
-			scannable: true,
-			size: 20,
-			heightSizeOffset: 0,
-			renderAs: 'model',
-			model: 'teleporter',
-			inventorySize: 100,
-			// color: [1, 1, 1],
-			interactionRange: 80,
-			interactionAction: 'Add part',
-			interactionEffort: 0,
-			damage: PARTS_NEEDED,
-			interactionResult: {
-				repair: 'timeTravelPart',
-			},
-		},
-	];
-
-	class DinoWorld extends SimWorld {
-		// constructor(...args) {
-		// 	super(...args);
-		// }
-
-		getTotalParts() { // eslint-disable-line
-			return PARTS.length;
-		}
-
-		addNewTrees(n, focusCoords) {
-			for (let i = n; i > 0; i -= 1) this.addNewTree(focusCoords);
-		}
-
-		addNewTree(focusCoords) {
-			const coords = this.getRandomSpawnCoords(focusCoords);
-			this.addNewItem({
-				isTree: true,
-				color: Random$1.pick(['#76c379', '#508d76']),
-				renderAs: 'model',
-				model: 'royalPalm',
-				coords,
-				rooted: true,
-			});
-			// TODO:
-			// Create random tree and find a location
-			// Add a despawnRadius
-			// Then also run this a few more times when a new chunk is loaded
-		}
-
-		addNewDino(focusCoords) {
-			const coords = this.getRandomSpawnCoords(focusCoords);
-			const [distance] = this.findNearestActor(coords);
-			if (distance < this.spawnActorDistance) return null;
-			// const randColor = () => (0.5 + (Random.random() * 0.5));
-			const dinoKey = Random$1.pick(Object.keys(dinos));
-			const dinoOpt = dinos[dinoKey];
-			const dino = this.addNewActor(dinoOpt);
-			dino.coords = coords;
-			console.log('Added dino', dino.name, dino.entityId);
-			return dino;
-		}
-
-		build(focusCoords) {
-			ITEMS.forEach((itemData) => {
-				this.addNewItem(itemData);
-			});
-			// this.addNewTrees(32, focusCoords);
-		}
-	}
-
 	/* eslint-disable no-bitwise, no-param-reassign */
 	/*
 	 * A speed-improved perlin and simplex noise algorithms for 2D.
@@ -76191,29 +75797,21 @@ var game_bundle = (function () {
 		);
 	};
 
+	// TODO: Need to remove everything that's not generic: height calculation and texture calculation
 	/* eslint-disable class-methods-use-this */
 
 	const { X, Y } = ArrayCoords;
 
-	const BASE_COLOR = [30, 30, 30]; // Dino: LIGHT_GREEN
-	const COLOR2 = [10, 10, 40];
-	const COLOR3 = [10, 20, 20];
-	const COLOR4 = [60, 60, 60];
-	const GRID_COLOR = [100, 200, 200];
-	const GRID_LOW_COLOR = [170, 100, 170]; // [200, 100, 200];
+	const UNITS_PER_METER = 20;
 
-	const GRID_COLOR_SPACING = 150;
-
-	const UNITS_PER_METER$1 = 20;
-
-	class DinoTerrain {
+	class TerrainGenerator {
 		constructor() {
 			const todaysSeed = PseudoRandomizer.getPseudoRandInt(Number(new Date()), 1000);
 			this.seed = todaysSeed;
 			// Sizes are measured in integer "units"
 			// 20 units = 1m = 100cm
 			// 1 unit = 5cm
-			this.unitsPerMeter = UNITS_PER_METER$1;
+			this.unitsPerMeter = UNITS_PER_METER;
 			// A chunk with size of 128m is roughly the size of ~10 houses.
 			// A collection of 3x3 chunks would be 384m, larger than a nyc city block (274m)
 			this.chunkSizeMeters = 128;
@@ -76227,6 +75825,13 @@ var game_bundle = (function () {
 			this.terrainChunkVertexSize = this.terrainSegmentsPerChunk + 1;
 			this.terrainChunksCache = {};
 			this.terrainColor = '#808095'; // dino: '#76c379';
+		}
+
+		static clamp(...args) { return clamp$1(...args); }
+
+		static perlinNoise(...args) {
+			if (args.length >= 3) return noise.perlin3(...args);
+			return noise.perlin2(...args);
 		}
 
 		validateNumbers(objOfValues, ...args) {
@@ -76243,6 +75848,7 @@ var game_bundle = (function () {
 			return altitudeScale * noise.perlin2(noiseScale * x, noiseScale * y);
 		}
 
+		/** This is where the magic happens. This function is meant to be overriden */
 		calcTerrainHeight(xP, y) {
 			// return 0;
 			const x = xP + 120;
@@ -76253,25 +75859,25 @@ var game_bundle = (function () {
 			// const delta = maxHeight - minHeight;
 			let h = 100;
 			// Add big heights
-			h += DinoTerrain.calcNoiseHeight(x, y, 0.0002, 800);
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.0002, 800);
 			h = clamp$1(h, minHeight, maxHeight);
 			// Pokey mountains
-			h += DinoTerrain.calcNoiseHeight(x, y, 0.0008, 600);
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.0008, 600);
 
-			// const roll = DinoTerrain.calcNoiseHeight(x, y, 0.00015, 1);
+			// const roll = TerrainGenerator.calcNoiseHeight(x, y, 0.00015, 1);
 			// if (roll)
 			h = clamp$1(h, minHeight, maxHeight);
 
 			// Add roughness
 			const roughness = (h <= 2) ? 20 : 50 * (h / maxHeight);
-			h += DinoTerrain.calcNoiseHeight(x, y, 0.002, roughness);
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.002, roughness);
 
 			// Add ripples (negative for erosion)
 			h -= 20 * (
 				1 + Math.sin(noiseScale * x + 10 * noise.perlin3(noiseScale * x, noiseScale * 2 * y, 0))
 			);
 			h = clamp$1(h, minHeight, maxHeight);
-			// h += DinoTerrain.calcNoiseHeight(x, y, 0.00021, 200);
+			// h += TerrainGenerator.calcNoiseHeight(x, y, 0.00021, 200);
 			// this.validateNumbers({ h, h2 });
 			return h;
 		}
@@ -76319,6 +75925,7 @@ var game_bundle = (function () {
 			return { canvas, ctx };
 		}
 
+		/** This is meant to be overriden */
 		getTerrainTextureColor(worldX, worldY) {
 			if (worldX === 0 && worldY > 0) return [255, 255, 255];
 			if (worldY === 0 && worldX > 0) return [0, 255, 0];
@@ -76326,33 +75933,7 @@ var game_bundle = (function () {
 			// if (worldX === worldY) return [255, 255, 255];
 			// if (worldX === -worldY) return [255, 255, 0];
 			// if (worldX < 100 && worldX > -100 && worldY < 100 && worldY > -100) return [255, 0, 0];
-			let color = BASE_COLOR;
-			// TODO: Remove * 2 below
-			// TODO: Add in some other noise randomness
-			// const h = Math.round(this.calcTerrainHeight(worldX * 2, worldY * 2));
-			const h = Math.round(this.calcTerrainHeight(worldX, worldY));
-
-			// console.log(worldX, worldY, worldX % 10);
-			if (worldX % GRID_COLOR_SPACING === 0 || worldY % GRID_COLOR_SPACING === 0) {
-				if (h < 3) return GRID_LOW_COLOR;
-				return GRID_COLOR;
-			}
-			// if (worldY > 0) return [0, 0, 200];
-
-			// if (h > 10 && h < 14) return [150, 200, 200]; // coastal splash line
-			
-			if (h > 400) {
-				color = COLOR4;
-			} else if (h > 300) {
-				color = (h % 2 === 0) ? COLOR4 : COLOR3;
-			} else if (h > 250) {
-				color = (h % 4 === 0) ? BASE_COLOR : COLOR3;
-			} else if (h > 150) {
-				color = (h % 2 === 0) ? BASE_COLOR : COLOR3;
-			} else if (h > 1) {
-				color = (h % 5 === 0) ? BASE_COLOR : COLOR2;
-			}
-			return color;
+			return [100, 100, 100];
 		}
 
 		getTextureSetupData() {
@@ -76382,7 +75963,7 @@ var game_bundle = (function () {
 				stepSize,
 			} = this.getTextureSetupData();
 			const data = array;
-			const setColor = DinoTerrain.getSetColorFunction(data);
+			const setColor = TerrainGenerator.getSetColorFunction(data);
 			
 			for (let y = 0; y < height; y += 1) {
 				const yi = y * width * INDEX_PER_PIXEL;
@@ -76431,7 +76012,7 @@ var game_bundle = (function () {
 			let y;
 
 			// const textureData = this.getTextureSetupData().array;
-			// const setColor = DinoTerrain.getSetColorFunction(textureData);
+			// const setColor = TerrainGenerator.getSetColorFunction(textureData);
 
 			for (y = 0; y < dataSize; y += 1) {
 				if (!heights[y]) heights[y] = [];
@@ -76479,6 +76060,8 @@ var game_bundle = (function () {
 
 			// document.getElementById('map').innerHTML = '';
 			// document.getElementById('map').appendChild(image);
+
+			// Returns a "chunk" object
 			return {
 				color: this.terrainColor, // (chunkCoords[X] - chunkCoords[Y] === 0) ? 0x55ffbb : 0x66eeaa,
 				// textureImage,
@@ -76521,6 +76104,406 @@ var game_bundle = (function () {
 				}
 			}
 			return chunks;
+		}
+	}
+
+	const MAX_ACTORS = 5000;
+	const SECONDS_PER_HOUR = 60 * 60;
+	const SECONDS_PER_DAY = SECONDS_PER_HOUR * 24;
+	const START_WORLD_TIME = 60 * 60 * 8; // 7 AM, in seconds
+
+	/**
+	 * A SimWorld is some kind of "space", a time, and a collection
+	 * of entities that live in that space and time
+	 */
+	class SimWorld {
+		constructor(options = {}) {
+			const {
+				ActorClass = Entity, // recommended
+				ItemClass = Entity, // recommended
+				TerrainGeneratorClass = TerrainGenerator, // recommended
+				startWorldTime, // optional
+				physics = true,
+			} = options;
+			// Classes
+			this.ItemClass = ItemClass;
+			this.ActorClass = ActorClass;
+			this.TerrainGeneratorClass = TerrainGeneratorClass;
+			// Time
+			this.lastDeltaT = 0; // just for debug/tracking purposes
+			// How spaced-out do you want the spawned actors
+			this.spawnActorDistance = 1000;
+			// Min spawn distance should be greater than the sight view of enemies so that they
+			// don't spawn and instantly attack.
+			// Max spawn distance should be somwhat similar to half the size of all the chunks being shown
+			this.spawnRadii = [this.spawnActorDistance, 3500];
+			this.despawnRadius = this.spawnRadii[1] * 1.5;
+			// this.loop = new Looper();
+			this.players = [];
+			this.spirits = [];
+			this.actors = [];
+			this.items = [];
+			this.tick = 0;
+			this.worldTime = startWorldTime || START_WORLD_TIME; // In seconds
+			this.worldTimePerGameTime = 100; // originally 200
+			// Instantiate things
+			this.terrainGen = new this.TerrainGeneratorClass();
+			this.physicsWorld = new World({
+				gravity: new Vec3(0, 0, -90.8), // TODO: determine based on grid units to meter conversion
+			});
+		}
+
+		setup() {
+			// TODO: Remove test code below
+			const groundBody = new Body({
+				type: Body.STATIC,
+				shape: new Plane(),
+			});
+			groundBody.quaternion.setFromEuler(0, 0, 0); // (-Math.PI / 2, 0, 0);
+			this.physicsWorld.addBody(groundBody);
+			const radius = 500;
+			const sphereBody = new Body({
+				mass: 5,
+				shape: new Sphere(radius),
+			});
+			sphereBody.position.set(2000, 200, 5000);
+			this.physicsWorld.addBody(sphereBody);
+			this.cannonDebugger = new CannonDebugger(this.debugScene, this.physicsWorld, { color: 0xff0000 });
+		}
+
+		update(t) {
+			this.tick += 1;
+			if (this.tick > 1000000) this.tick = 0;
+			const deltaTWorldTime = (t / 1000) * this.worldTimePerGameTime;
+			this.worldTime = (this.worldTime + deltaTWorldTime) % SECONDS_PER_DAY;
+			this.actors.forEach((actor) => actor.update(t, this));
+			this.physicsWorld.fixedStep();
+			this.cannonDebugger.update();
+			return {};
+		}
+
+		getHour() {
+			return Math.floor(this.worldTime / SECONDS_PER_HOUR);
+		}
+
+		getMinutes() {
+			return Math.floor(this.worldTime / 60) % 60;
+		}
+
+		getRandomSpawnCoords(coords) {
+			const [minRadius, maxRadius] = this.spawnRadii;
+			const r = minRadius + Random$1.randomInt(maxRadius - minRadius);
+			const angle = Random$1.randomAngle();
+			const [x, y] = ArrayCoords.polarToCartesian(r, angle);
+			return ArrayCoords.add(coords, [x, y, 0]);
+		}
+
+		makeCharacter(charProperties) {
+			const character = new this.ActorClass(charProperties);
+			character.isCharacter = true;
+			return character;
+		}
+
+		addNewCharacter(charProperties) {
+			const character = this.makeCharacter(charProperties);
+			this.actors.push(character);
+			return character;
+		}
+
+		makeActor(opt = {}) {
+			return (new this.ActorClass(opt));
+		}
+
+		addNewActor(opt) {
+			if (this.actors.length >= MAX_ACTORS) return null;
+			const actor = this.makeActor(opt);
+			this.actors.push(actor);
+			return actor;
+		}
+
+		makeItem(itemData = {}) {
+			const item = new this.ItemClass(itemData);
+			if (item.randomAtRadius) {
+				const angle = Random$1.randomAngle();
+				const [x, y] = ArrayCoords.polarToCartesian(Number(item.randomAtRadius), angle);
+				item.coords = [x, y, 0];
+			}
+			return item;
+		}
+
+		addNewItem(itemData = {}) {
+			const item = this.makeItem(itemData);
+			this.items.push(item);
+			return item;
+		}
+
+		/** Returns an array of (0) the distance to the nearest thing, and (1) the thing */
+		static findNearest(arr, coords, filterFn) {
+			const nearest = arr.reduce((previousValue, thing) => {
+				// if there's a filter function defined, then use it to
+				// skip considering certain things
+				if (filterFn && !filterFn(thing)) return previousValue;
+				const [nearestSoFar] = previousValue;
+				const distance = ArrayCoords.getDistance(thing.coords, coords);
+				return (distance < nearestSoFar) ? [distance, thing] : previousValue;
+			}, [Infinity, null]);
+			return nearest;
+		}
+
+		findNearestActor(coords, filterFn) {
+			return SimWorld.findNearest(this.actors, coords, filterFn);
+		}
+
+		findNearestItem(coords, filterFn) {
+			return SimWorld.findNearest(this.items, coords, filterFn);
+		}
+
+		/** Find all items that are interactable (not necessary within range though) */
+		findNearestInteractableItem(coords) {
+			return SimWorld.findNearest(this.items, coords, this.ItemClass.isItemInteractable);
+		}
+
+		/** Find all items that are interactable (not necessary within range though) */
+		findNearestInRangeInteractableItem(coords) {
+			const filter = (item) => this.ItemClass.isItemInRangeInteractable(item, coords);
+			// TODO: this could be made more efficient since we're checking distance twice
+			// (once in isItemInRangeInteractable, once in findNearest)
+			return SimWorld.findNearest(this.items, coords, filter);
+		}
+
+		/** Will mutate certain things (array items) to set the `remove` property */
+		removeLost(things = [], despawnCenter = [0, 0, 0]) {
+			things.forEach((thing) => {
+				if (thing.isCharacter || thing.important) return;
+				if (typeof thing.despawnRadius !== 'number') return;
+				const distance = ArrayCoords.getDistance(despawnCenter, thing.coords);
+				// eslint-disable-next-line no-param-reassign
+				if (distance > this.despawnRadius) thing.remove = true;
+			});
+		}
+
+		despawn(despawnCenter) {
+			this.removeLost(this.actors, despawnCenter);
+			this.removeLost(this.items, despawnCenter);
+			this.cleanItems();
+			this.cleanActors();
+		}
+
+		static cleanRemoved(arr) {
+			for (let i = arr.length - 1; i >= 0; i -= 1) {
+				if (arr[i].remove) arr.splice(i, 1);
+			}
+		}
+
+		cleanItems() {
+			SimWorld.cleanRemoved(this.items);
+		}
+
+		cleanActors() {
+			SimWorld.cleanRemoved(this.actors);
+		}
+
+		getSun() {
+			const hr = this.getHour();
+			// Angle of 0 = fully risen, 12 = fully hidden
+			const sunLightAngle = (((hr / 24) * TAU$1) + PI$1) % TAU$1;
+			// TODO: Change the color of the sun light?
+			// TODO: Set min and max intensity values
+			return { sunLightAngle };
+		}
+	}
+
+	const defaultMass = 10000;
+
+	const defaultDino = {
+		name: 'Dino',
+		autonomous: true,
+		isDinosaur: true,
+		wandering: true,
+		size: 60,
+		damageRange: 60,
+		heightSizeOffset: 0,
+		// color: [randColor(), randColor(), randColor()],
+		walkForce: 900 * defaultMass,
+		mass: defaultMass,
+		attentionDistance: 1000,
+		fleeDistance: 0,
+		huntDistance: 0,
+		renderAs: 'model', // renderAs: 'sphere',
+		turnSpeed: TAU$1 / 3000,
+	};
+	const dinos = {
+		apat: {
+			...defaultDino,
+			model: 'apat',
+			faction: 'herbivore',
+			name: 'Dino apat',
+			mass: defaultMass * 2.5,
+			turnSpeed: TAU$1 / 5000,
+		},
+		para: {
+			...defaultDino,
+			model: 'para',
+			faction: 'herbivore',
+			name: 'Dino para',
+			mass: defaultMass * 0.6,
+		},
+		steg: {
+			...defaultDino,
+			model: 'steg',
+			faction: 'herbivore',
+			name: 'Dino steg',
+			mass: defaultMass,
+		},
+		trex: {
+			...defaultDino,
+			model: 'trex',
+			faction: 'trex',
+			name: 'Dino trex',
+			mass: defaultMass * 1.5,
+			huntDistance: 500,
+		},
+		tric: {
+			...defaultDino,
+			model: 'tric',
+			faction: 'tric',
+			name: 'Dino tric',
+			mass: defaultMass * 1.3,
+		},
+		velo: {
+			...defaultDino,
+			model: 'velo',
+			faction: 'velo',
+			name: 'Dino velo',
+			mass: defaultMass * 0.5,
+			huntDistance: 500,
+		},
+	};
+
+	const PART_SIZE = 20;
+	const PART = {
+		name: 'Time travel machine part',
+		randomAtRadius: 100,
+		size: PART_SIZE,
+		rooted: true,
+		scannable: true,
+		timeTravelPart: true,
+		interactionRange: PART_SIZE + 40,
+		interactionAction: 'Dig',
+		interactionEffort: 100,
+		heightSizeOffset: 0,
+		inventoryDescription: 'This should be useful for rebuilding your time machine.',
+		interactionResult: {
+			modify: {
+				heightSizeOffset: 0.5,
+				rooted: false,
+				// collectible: true,
+				interactionAction: 'Pick up',
+				interactionEffort: 0,
+				interactionResult: { pickUp: true },
+			},
+		},
+		castShadow: true,
+		renderAs: 'model',
+		model: 'gear',
+	};
+	const PARTS = [
+		{ ...PART, randomAtRadius: 400, model: 'sputnik', heightSizeOffset: -0.5 },
+		{ ...PART, randomAtRadius: 600 },
+		{ ...PART, randomAtRadius: 700, model: 'computer', heightSizeOffset: -0.5 },
+		{ ...PART, randomAtRadius: 1200, model: 'commandPod', heightSizeOffset: -0.25 },
+		{ ...PART, randomAtRadius: 2200, model: 'sputnik' },
+		{ ...PART, randomAtRadius: 2000 },
+		{ ...PART, randomAtRadius: 3000, model: 'sputnik' },
+		{ ...PART, randomAtRadius: 4000, model: 'computer' },
+		{ ...PART, randomAtRadius: 5000 },
+	];
+
+	// Powers:
+	// - GPS Gravitation-wave Positioning System -- provides x,y,z coordinates
+	// - Compass --- provides N, S, E, W compass
+	// - Scanner --- provides some way to detect parts
+	// - threat monitor --- beeps when a creature neatby is aggro'd
+	// - rocket boots --- big jumps
+	// - Chrono-collector --- collects time resource
+	// - time-stopper --- drops a bubble that stops everyone but character in a radius
+	// - ranged time-stopper --- time bubble near where it's fired
+	// - overhead camera --- provides a map view
+	// - scanning visor --- provides a wireframe view with things highlighted
+	// - drone --- provides a mobile viewing system
+	// - laser gun
+	const PARTS_NEEDED = 6;
+	const ITEMS = [
+		...PARTS,
+		{
+			name: 'time machine',
+			isTimeMachine: true,
+			randomAtRadius: 10,
+			rooted: true,
+			scannable: true,
+			size: 20,
+			heightSizeOffset: 0,
+			renderAs: 'model',
+			model: 'teleporter',
+			inventorySize: 100,
+			// color: [1, 1, 1],
+			interactionRange: 80,
+			interactionAction: 'Add part',
+			interactionEffort: 0,
+			damage: PARTS_NEEDED,
+			interactionResult: {
+				repair: 'timeTravelPart',
+			},
+		},
+	];
+
+	class DinoWorld extends SimWorld {
+		// constructor(...args) {
+		// 	super(...args);
+		// }
+
+		getTotalParts() { // eslint-disable-line
+			return PARTS.length;
+		}
+
+		addNewTrees(n, focusCoords) {
+			for (let i = n; i > 0; i -= 1) this.addNewTree(focusCoords);
+		}
+
+		addNewTree(focusCoords) {
+			const coords = this.getRandomSpawnCoords(focusCoords);
+			this.addNewItem({
+				isTree: true,
+				color: Random$1.pick(['#76c379', '#508d76']),
+				renderAs: 'model',
+				model: 'royalPalm',
+				coords,
+				rooted: true,
+			});
+			// TODO:
+			// Create random tree and find a location
+			// Add a despawnRadius
+			// Then also run this a few more times when a new chunk is loaded
+		}
+
+		addNewDino(focusCoords) {
+			const coords = this.getRandomSpawnCoords(focusCoords);
+			const [distance] = this.findNearestActor(coords);
+			if (distance < this.spawnActorDistance) return null;
+			// const randColor = () => (0.5 + (Random.random() * 0.5));
+			const dinoKey = Random$1.pick(Object.keys(dinos));
+			const dinoOpt = dinos[dinoKey];
+			const dino = this.addNewActor(dinoOpt);
+			dino.coords = coords;
+			console.log('Added dino', dino.name, dino.entityId);
+			return dino;
+		}
+
+		build(focusCoords) {
+			ITEMS.forEach((itemData) => {
+				this.addNewItem(itemData);
+			});
+			// this.addNewTrees(32, focusCoords);
 		}
 	}
 
@@ -76824,17 +76807,8 @@ var game_bundle = (function () {
 	const SHOW_CLASS = 'ui-show';
 	const HIDE_CLASS = 'ui-hide';
 
-	const UNITS_PER_METER = 20; // TODO: get from world
-
-	function round(n = 0, m = 100) {
-		return Math.round(n * m) / m;
-	}
-
-	class DinoInterface {
+	class Interface {
 		constructor() {
-			this.log = [];
-			this.lastDisplayedLogLength = 0;
-			this.logShow = 3;
 			this.borderSelector = '#hud';
 		}
 
@@ -76845,25 +76819,25 @@ var game_bundle = (function () {
 		}
 
 		static setText(selector, text) {
-			const elt = DinoInterface.$(selector);
+			const elt = Interface.$(selector);
 			if (elt.innerText === text) return;
 			elt.innerText = text;
 		}
 
 		static setHtml(selector, html) {
-			const elt = DinoInterface.$(selector);
+			const elt = Interface.$(selector);
 			if (elt.innerHTML === html) return;
 			elt.innerHTML = html;
 		}
 
 		static show(selector) {
-			const elt = DinoInterface.$(selector);
+			const elt = Interface.$(selector);
 			elt.classList.remove(HIDE_CLASS);
 			elt.classList.add(SHOW_CLASS);
 		}
 
 		static hide(selector) {
-			const elt = DinoInterface.$(selector);
+			const elt = Interface.$(selector);
 			elt.classList.remove(SHOW_CLASS);
 			elt.classList.add(HIDE_CLASS);
 		}
@@ -76873,34 +76847,34 @@ var game_bundle = (function () {
 		}
 
 		static getItemName(item) {
-			let n = DinoInterface.capitalize(item.name) || 'Item';
+			let n = Interface.capitalize(item.name) || 'Item';
 			if (item.damage) n += ` - Damaged (${item.damage})`;
 			return n;
 		}
 
-		show(selector) { DinoInterface.show(selector); }
+		show(selector) { Interface.show(selector); }
 
-		hide(selector) { DinoInterface.hide(selector); }
+		hide(selector) { Interface.hide(selector); }
 
-		showLoading() { DinoInterface.show('#loading'); }
+		showLoading() { Interface.show('#loading'); }
 
-		hideLoading() { DinoInterface.hide('#loading'); }
+		hideLoading() { Interface.hide('#loading'); }
 
-		showWin() { DinoInterface.show('#win'); }
+		showWin() { Interface.show('#win'); }
 
-		hideWin() { DinoInterface.hide('#win'); }
+		hideWin() { Interface.hide('#win'); }
 
-		showMainMenu() { DinoInterface.show('#main-menu'); }
+		showMainMenu() { Interface.show('#main-menu'); }
 
-		hideMainMenu() { DinoInterface.hide('#main-menu'); }
+		hideMainMenu() { Interface.hide('#main-menu'); }
 
-		showHud() { DinoInterface.show('#hud'); }
+		showHud() { Interface.show('#hud'); }
 
-		hideHud() { DinoInterface.hide('#hud'); }
+		hideHud() { Interface.hide('#hud'); }
 
-		showDead() { DinoInterface.show('#dead'); }
+		showDead() { Interface.show('#dead'); }
 
-		hideDead() { DinoInterface.hide('#dead'); }
+		hideDead() { Interface.hide('#dead'); }
 
 		addToLog(messages) {
 			if (!messages || !messages.length) return;
@@ -76909,7 +76883,7 @@ var game_bundle = (function () {
 		}
 
 		flashBorder(color = '#f00', duration = 1000) {
-			const elt = DinoInterface.$(this.borderSelector);
+			const elt = Interface.$(this.borderSelector);
 			const keyFrames = [ // Keyframes
 				{ borderColor: color },
 				{ borderColor: 'transparent' },
@@ -76918,6 +76892,25 @@ var game_bundle = (function () {
 			const effect = new KeyframeEffect(elt, keyFrames, keyFrameSettings);
 			const animation = new Animation(effect, document.timeline);
 			animation.play();
+		}
+
+		render() {
+	        // override this function
+		}
+	}
+
+	/* eslint-disable class-methods-use-this */
+
+	function round(n = 0, m = 100) {
+		return Math.round(n * m) / m;
+	}
+
+	class DinoInterface extends Interface {
+		constructor() {
+			super();
+			this.log = [];
+			this.lastDisplayedLogLength = 0;
+			this.logShow = 3;
 		}
 
 		updateInteraction(item) {
@@ -76947,6 +76940,8 @@ var game_bundle = (function () {
 		}
 
 		updateScanner(scanResults = []) {
+			// TODO: Remove - very specific to Chronosaur
+			/*
 			let nearestDistance = Infinity;
 			let nearestTimeMachine = false;
 			const listItems = scanResults
@@ -76962,14 +76957,15 @@ var game_bundle = (function () {
 					if (behind) classes.push('scan-bar-behind');
 					if (front) classes.push('scan-bar-front');
 					return `<li class="${classes.join(' ')}" style="height: ${displayPercent}%;">
-					<span>${round(distance / UNITS_PER_METER)}m ${round(sortAngle)}rad</span>
-				</li>`;
+						<span>${round(distance / UNITS_PER_METER)}m ${round(sortAngle)}rad</span>
+					</li>`;
 				});
 			DinoInterface.setHtml('#scans', listItems.join(''));
 			DinoInterface.setText(
 				'#nearest-scan',
 				`Nearest: ${round(nearestDistance / UNITS_PER_METER)} m ${nearestTimeMachine ? '(Time machine)' : ''}`,
 			);
+			*/
 		}
 
 		updateLog() {
@@ -77422,6 +77418,86 @@ var game_bundle = (function () {
 		wandering: './audio/music/Chronosaurus_Wandering_Theme.mp3',
 	};
 
+	const BASE_COLOR = [30, 30, 30]; // Dino: LIGHT_GREEN
+	const COLOR2 = [10, 10, 40];
+	const COLOR3 = [10, 20, 20];
+	const COLOR4 = [60, 60, 60];
+	const GRID_COLOR = [100, 200, 200];
+	const GRID_LOW_COLOR = [170, 100, 170]; // [200, 100, 200];
+
+	const GRID_COLOR_SPACING = 150;
+
+	class DinoTerrainGenerator extends TerrainGenerator {
+		calcTerrainHeight(xP, y) {
+			// return 0;
+			const x = xP + 120;
+			const noiseScale = 0.002;
+			// const noiseScale = 0.0002;
+			const minHeight = 0;
+			const maxHeight = 2000;
+			// const delta = maxHeight - minHeight;
+			let h = 100;
+			// Add big heights
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.0002, 800);
+			h = TerrainGenerator.clamp(h, minHeight, maxHeight);
+			// Pokey mountains
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.0008, 600);
+
+			// const roll = TerrainGenerator.calcNoiseHeight(x, y, 0.00015, 1);
+			// if (roll)
+			h = TerrainGenerator.clamp(h, minHeight, maxHeight);
+
+			// Add roughness
+			const roughness = (h <= 2) ? 20 : 50 * (h / maxHeight);
+			h += TerrainGenerator.calcNoiseHeight(x, y, 0.002, roughness);
+
+			// Add ripples (negative for erosion)
+			h -= 20 * (
+				1 + Math.sin(noiseScale * x + 10 * TerrainGenerator.perlinNoise(noiseScale * x, noiseScale * 2 * y, 0))
+			);
+			h = TerrainGenerator.clamp(h, minHeight, maxHeight);
+			// h += TerrainGenerator.calcNoiseHeight(x, y, 0.00021, 200);
+			// this.validateNumbers({ h, h2 });
+			return h;
+		}
+
+	    getTerrainTextureColor(worldX, worldY) {
+			if (worldX === 0 && worldY > 0) return [255, 255, 255];
+			if (worldY === 0 && worldX > 0) return [0, 255, 0];
+			if (worldX === 0 || worldY === 0) return [0, 0, 255];
+			// if (worldX === worldY) return [255, 255, 255];
+			// if (worldX === -worldY) return [255, 255, 0];
+			// if (worldX < 100 && worldX > -100 && worldY < 100 && worldY > -100) return [255, 0, 0];
+			let color = BASE_COLOR;
+			// TODO: Remove * 2 below
+			// TODO: Add in some other noise randomness
+			// const h = Math.round(this.calcTerrainHeight(worldX * 2, worldY * 2));
+			const h = Math.round(this.calcTerrainHeight(worldX, worldY));
+
+			// console.log(worldX, worldY, worldX % 10);
+			if (worldX % GRID_COLOR_SPACING === 0 || worldY % GRID_COLOR_SPACING === 0) {
+				if (h < 3) return GRID_LOW_COLOR;
+				return GRID_COLOR;
+			}
+			// if (worldY > 0) return [0, 0, 200];
+
+			// if (h > 10 && h < 14) return [150, 200, 200]; // coastal splash line
+			
+			if (h > 400) {
+				color = COLOR4;
+			} else if (h > 300) {
+				color = (h % 2 === 0) ? COLOR4 : COLOR3;
+			} else if (h > 250) {
+				color = (h % 4 === 0) ? BASE_COLOR : COLOR3;
+			} else if (h > 150) {
+				color = (h % 2 === 0) ? BASE_COLOR : COLOR3;
+			} else if (h > 1) {
+				color = (h % 5 === 0) ? BASE_COLOR : COLOR2;
+			}
+			return color;
+		}
+	}
+
 	const DEFAULT_TIME = 5; // ms
 
 	// const { X, Y, Z } = ArrayCoords;
@@ -77452,8 +77528,8 @@ var game_bundle = (function () {
 				InterfaceClass: DinoInterface,
 				SoundControllerClass: DinoSoundController,
 				// SoundControllerClass: SoundController,
+				TerrainGeneratorClass: DinoTerrainGenerator,
 			});
-			this.terrainBuilder = new DinoTerrain();
 			this.speaker = new Speaker({ voice: 'David', pitch: 1.2, rate: 0.9 });
 			this.pointerLocker = new PointerLocker();
 			this.cameraPosition = [0, 0, 0];
@@ -77544,9 +77620,10 @@ var game_bundle = (function () {
 			}
 		}
 
+		// TODO: Move to SimWorld?
 		setHeightToTerrain(entity) {
 			const [x, y, z] = entity.coords;
-			let h = this.terrainBuilder.getTerrainHeight(x, y);
+			let h = this.world.terrainGen.getTerrainHeight(x, y);
 			h += (entity.heightSizeOffset * entity.size);
 			const grounded = (z <= h + 1);
 			// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
@@ -77600,7 +77677,7 @@ var game_bundle = (function () {
 			// Generate terrain -  // TODO: move to SimWorld
 			const { mainCharacter, world } = this;
 			const chunkRadius = Math.min(0 + Math.floor(this.tick / 70), 3);
-			const terrainChunks = this.terrainBuilder.makeTerrainChunks(mainCharacter.coords, chunkRadius);
+			const terrainChunks = this.world.terrainGen.makeTerrainChunks(mainCharacter.coords, chunkRadius);
 			// Update actors
 			// TODO: Move to SimWorld
 			world.actors.forEach((actor) => this.setHeightToTerrain(actor));
@@ -77691,7 +77768,7 @@ var game_bundle = (function () {
 			this.world.build(this.mainCharacter.coords);
 			this.world.items.forEach((item) => {
 				if (item.rooted) {
-					this.setHeightToTerrain(item, this.terrainBuilder);
+					this.setHeightToTerrain(item);
 				}
 				if (item.isTimeMachine) this.timeMachine = item;
 			});

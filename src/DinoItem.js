@@ -1,6 +1,6 @@
 import { ArrayCoords, clamp } from 'rocket-boots';
 
-import Entity from './Entity.js';
+import Entity from './triludo/Entity.js';
 
 class DinoItem extends Entity {
 	constructor(properties = {}) {

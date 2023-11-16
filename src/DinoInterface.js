@@ -1,7 +1,5 @@
 /* eslint-disable class-methods-use-this */
-
-const SHOW_CLASS = 'ui-show';
-const HIDE_CLASS = 'ui-hide';
+import Interface from './triludo/Interface.js';
 
 const UNITS_PER_METER = 20; // TODO: get from world
 
@@ -9,94 +7,12 @@ function round(n = 0, m = 100) {
 	return Math.round(n * m) / m;
 }
 
-class DinoInterface {
+class DinoInterface extends Interface {
 	constructor() {
+		super();
 		this.log = [];
 		this.lastDisplayedLogLength = 0;
 		this.logShow = 3;
-		this.borderSelector = '#hud';
-	}
-
-	static $(selector) {
-		const elt = window.document.querySelector(selector);
-		if (!elt) console.warn('Could not find', selector);
-		return elt;
-	}
-
-	static setText(selector, text) {
-		const elt = DinoInterface.$(selector);
-		if (elt.innerText === text) return;
-		elt.innerText = text;
-	}
-
-	static setHtml(selector, html) {
-		const elt = DinoInterface.$(selector);
-		if (elt.innerHTML === html) return;
-		elt.innerHTML = html;
-	}
-
-	static show(selector) {
-		const elt = DinoInterface.$(selector);
-		elt.classList.remove(HIDE_CLASS);
-		elt.classList.add(SHOW_CLASS);
-	}
-
-	static hide(selector) {
-		const elt = DinoInterface.$(selector);
-		elt.classList.remove(SHOW_CLASS);
-		elt.classList.add(HIDE_CLASS);
-	}
-
-	static capitalize(str) {
-		return str.charAt(0).toUpperCase() + str.slice(1);
-	}
-
-	static getItemName(item) {
-		let n = DinoInterface.capitalize(item.name) || 'Item';
-		if (item.damage) n += ` - Damaged (${item.damage})`;
-		return n;
-	}
-
-	show(selector) { DinoInterface.show(selector); }
-
-	hide(selector) { DinoInterface.hide(selector); }
-
-	showLoading() { DinoInterface.show('#loading'); }
-
-	hideLoading() { DinoInterface.hide('#loading'); }
-
-	showWin() { DinoInterface.show('#win'); }
-
-	hideWin() { DinoInterface.hide('#win'); }
-
-	showMainMenu() { DinoInterface.show('#main-menu'); }
-
-	hideMainMenu() { DinoInterface.hide('#main-menu'); }
-
-	showHud() { DinoInterface.show('#hud'); }
-
-	hideHud() { DinoInterface.hide('#hud'); }
-
-	showDead() { DinoInterface.show('#dead'); }
-
-	hideDead() { DinoInterface.hide('#dead'); }
-
-	addToLog(messages) {
-		if (!messages || !messages.length) return;
-		if (messages instanceof Array) this.log = this.log.concat(messages);
-		else this.log.push(messages); // string hopefully
-	}
-
-	flashBorder(color = '#f00', duration = 1000) {
-		const elt = DinoInterface.$(this.borderSelector);
-		const keyFrames = [ // Keyframes
-			{ borderColor: color },
-			{ borderColor: 'transparent' },
-		];
-		const keyFrameSettings = { duration, direction: 'alternate', easing: 'linear' };
-		const effect = new KeyframeEffect(elt, keyFrames, keyFrameSettings);
-		const animation = new Animation(effect, document.timeline);
-		animation.play();
 	}
 
 	updateInteraction(item) {
@@ -126,6 +42,8 @@ class DinoInterface {
 	}
 
 	updateScanner(scanResults = []) {
+		// TODO: Remove - very specific to Chronosaur
+		/*
 		let nearestDistance = Infinity;
 		let nearestTimeMachine = false;
 		const listItems = scanResults
@@ -149,6 +67,7 @@ class DinoInterface {
 			'#nearest-scan',
 			`Nearest: ${round(nearestDistance / UNITS_PER_METER)} m ${nearestTimeMachine ? '(Time machine)' : ''}`,
 		);
+		*/
 	}
 
 	updateLog() {

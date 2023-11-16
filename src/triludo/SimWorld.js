@@ -1,7 +1,8 @@
 import { ArrayCoords, Random, TAU, PI } from 'rocket-boots';
 import * as CANNON from 'cannon-es';
 import CannonDebugger from 'cannon-es-debugger';
-import Entity from '../Entity.js';
+import Entity from './Entity.js';
+import TerrainGenerator from './TerrainGenerator.js';
 
 const MAX_ACTORS = 5000;
 const SECONDS_PER_HOUR = 60 * 60;
@@ -17,12 +18,14 @@ class SimWorld {
 		const {
 			ActorClass = Entity, // recommended
 			ItemClass = Entity, // recommended
+			TerrainGeneratorClass = TerrainGenerator, // recommended
 			startWorldTime, // optional
 			physics = true,
 		} = options;
 		// Classes
 		this.ItemClass = ItemClass;
 		this.ActorClass = ActorClass;
+		this.TerrainGeneratorClass = TerrainGeneratorClass;
 		// Time
 		this.lastDeltaT = 0; // just for debug/tracking purposes
 		// How spaced-out do you want the spawned actors
@@ -40,6 +43,8 @@ class SimWorld {
 		this.tick = 0;
 		this.worldTime = startWorldTime || START_WORLD_TIME; // In seconds
 		this.worldTimePerGameTime = 100; // originally 200
+		// Instantiate things
+		this.terrainGen = new this.TerrainGeneratorClass();
 		this.physicsWorld = new CANNON.World({
 			gravity: new CANNON.Vec3(0, 0, -90.8), // TODO: determine based on grid units to meter conversion
 		});
@@ -58,7 +63,7 @@ class SimWorld {
 			mass: 5,
 			shape: new CANNON.Sphere(radius),
 		});
-		sphereBody.position.set(0, 2000, 2000);
+		sphereBody.position.set(2000, 200, 5000);
 		this.physicsWorld.addBody(sphereBody);
 		this.cannonDebugger = new CannonDebugger(this.debugScene, this.physicsWorld, { color: 0xff0000 });
 	}

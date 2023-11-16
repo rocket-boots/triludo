@@ -5,7 +5,7 @@ import { Vector3, Group, Scene, PerspectiveCamera } from 'three';
 // import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { TAU, HALF_PI, clamp } from 'rocket-boots';
 import Renderer from 'rocket-boots-three-toolbox/src/Renderer.js';
-import ModelManager from './ModelManager.js';
+import ModelManager from './triludo/ModelManager.js';
 
 // import noise from 'noise-esm';
 

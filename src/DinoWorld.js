@@ -40,6 +40,7 @@ const PARTS = [
 	{ ...PART, randomAtRadius: 4000, model: 'computer' },
 	{ ...PART, randomAtRadius: 5000 },
 ];
+
 // Powers:
 // - GPS Gravitation-wave Positioning System -- provides x,y,z coordinates
 // - Compass --- provides N, S, E, W compass

@@ -17,6 +17,7 @@ class GenericGame extends StateCommander {
 			ActorClass = Entity, // recommended - for world
 			ItemClass = Entity, // recommended - for world
 			SoundControllerClass = SoundController, // recommended
+			TerrainGeneratorClass, // recommended
 			states, // recommended
 			minMouseWheel = -100,
 			maxMouseWheel = 100,
@@ -32,7 +33,7 @@ class GenericGame extends StateCommander {
 		this.mouseWheelWatcher = new MouseWheelWatcher({ min: minMouseWheel, max: maxMouseWheel });
 		this.gameScene = new SceneClass({ models: options.models });
 		this.world = new WorldClass({
-			ActorClass, ItemClass,
+			ActorClass, ItemClass, TerrainGeneratorClass,
 		});
 		this.interface = new InterfaceClass();
 		this.players = [];

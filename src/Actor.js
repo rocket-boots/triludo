@@ -1,5 +1,5 @@
 import { ArrayCoords, Random, TAU, PI, Pool } from 'rocket-boots';
-import Entity from './Entity.js';
+import Entity from './triludo/Entity.js';
 
 const CLOSE_ENOUGH = 100; // 2m
 const SLOW_DIST = 500; // 25m ~ 8 ft

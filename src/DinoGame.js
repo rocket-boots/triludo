@@ -1,9 +1,9 @@
 import { ArrayCoords, Speaker, PointerLocker, averageAngles, HALF_PI, PI, TWO_PI, TAU } from 'rocket-boots';
 
 import DinoScene from './DinoScene.js';
-import GenericGame from './GenericGame.js';
+import GenericGame from './triludo/GenericGame.js';
 import DinoWorld from './DinoWorld.js';
-import DinoTerrain from './DinoTerrain.js';
+import TerrainGenerator from './triludo/TerrainGenerator.js';
 import Actor from './Actor.js';
 import DinoSoundController from './DinoSoundController.js';
 import DinoItem from './DinoItem.js';
@@ -11,6 +11,7 @@ import DinoInterface from './DinoInterface.js';
 import models from './models.js';
 import states from './states.js';
 import { sounds, music } from './soundsAndMusic.js';
+import DinoTerrainGenerator from './DinoTerrainGenerator.js';
 
 const DEFAULT_TIME = 5; // ms
 
@@ -77,8 +78,8 @@ class DinoGame extends GenericGame {
 			InterfaceClass: DinoInterface,
 			SoundControllerClass: DinoSoundController,
 			// SoundControllerClass: SoundController,
+			TerrainGeneratorClass: DinoTerrainGenerator,
 		});
-		this.terrainBuilder = new DinoTerrain();
 		this.speaker = new Speaker({ voice: 'David', pitch: 1.2, rate: 0.9 });
 		this.pointerLocker = new PointerLocker();
 		this.cameraPosition = [0, 0, 0];
@@ -176,9 +177,10 @@ class DinoGame extends GenericGame {
 		}
 	}
 
+	// TODO: Move to SimWorld?
 	setHeightToTerrain(entity) {
 		const [x, y, z] = entity.coords;
-		let h = this.terrainBuilder.getTerrainHeight(x, y);
+		let h = this.world.terrainGen.getTerrainHeight(x, y);
 		h += (entity.heightSizeOffset * entity.size);
 		const grounded = (z <= h + 1);
 		// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
@@ -234,7 +236,7 @@ class DinoGame extends GenericGame {
 		// Generate terrain -  // TODO: move to SimWorld
 		const { mainCharacter, world } = this;
 		const chunkRadius = Math.min(0 + Math.floor(this.tick / 70), 3);
-		const terrainChunks = this.terrainBuilder.makeTerrainChunks(mainCharacter.coords, chunkRadius);
+		const terrainChunks = this.world.terrainGen.makeTerrainChunks(mainCharacter.coords, chunkRadius);
 		// Update actors
 		// TODO: Move to SimWorld
 		world.actors.forEach((actor) => this.setHeightToTerrain(actor));
@@ -325,7 +327,7 @@ class DinoGame extends GenericGame {
 		this.world.build(this.mainCharacter.coords);
 		this.world.items.forEach((item) => {
 			if (item.rooted) {
-				this.setHeightToTerrain(item, this.terrainBuilder);
+				this.setHeightToTerrain(item);
 			}
 			if (item.isTimeMachine) this.timeMachine = item;
 		});

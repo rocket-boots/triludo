@@ -1,26 +1,13 @@
+// TODO: Need to remove everything that's not generic: height calculation and texture calculation
 /* eslint-disable class-methods-use-this */
 import { PseudoRandomizer, ArrayCoords, clamp } from 'rocket-boots';
 import noise from 'noise-esm';
 
 const { X, Y } = ArrayCoords;
 
-const LIGHT_GREEN = [118, 195, 121]; // Light green = #76c379
-const DARK_GREEN = [80, 141, 118]; // Dark green = #508d76
-const TAN = [204, 146, 94]; // Tan #cc925e
-const DARK_GRAY = [125, 110, 100]; // #7d6e6e
-
-const BASE_COLOR = [30, 30, 30]; // Dino: LIGHT_GREEN
-const COLOR2 = [10, 10, 40];
-const COLOR3 = [10, 20, 20];
-const COLOR4 = [60, 60, 60];
-const GRID_COLOR = [100, 200, 200];
-const GRID_LOW_COLOR = [170, 100, 170]; // [200, 100, 200];
-
-const GRID_COLOR_SPACING = 150;
-
 const UNITS_PER_METER = 20;
 
-class DinoTerrain {
+class TerrainGenerator {
 	constructor() {
 		const todaysSeed = PseudoRandomizer.getPseudoRandInt(Number(new Date()), 1000);
 		this.seed = todaysSeed;
@@ -43,6 +30,13 @@ class DinoTerrain {
 		this.terrainColor = '#808095'; // dino: '#76c379';
 	}
 
+	static clamp(...args) { return clamp(...args); }
+
+	static perlinNoise(...args) {
+		if (args.length >= 3) return noise.perlin3(...args);
+		return noise.perlin2(...args);
+	}
+
 	validateNumbers(objOfValues, ...args) {
 		Object.keys(objOfValues).forEach((key) => {
 			const n = objOfValues[key];
@@ -57,6 +51,7 @@ class DinoTerrain {
 		return altitudeScale * noise.perlin2(noiseScale * x, noiseScale * y);
 	}
 
+	/** This is where the magic happens. This function is meant to be overriden */
 	calcTerrainHeight(xP, y) {
 		// return 0;
 		const x = xP + 120;
@@ -67,25 +62,25 @@ class DinoTerrain {
 		// const delta = maxHeight - minHeight;
 		let h = 100;
 		// Add big heights
-		h += DinoTerrain.calcNoiseHeight(x, y, 0.0002, 800);
+		h += TerrainGenerator.calcNoiseHeight(x, y, 0.0002, 800);
 		h = clamp(h, minHeight, maxHeight);
 		// Pokey mountains
-		h += DinoTerrain.calcNoiseHeight(x, y, 0.0008, 600);
+		h += TerrainGenerator.calcNoiseHeight(x, y, 0.0008, 600);
 
-		// const roll = DinoTerrain.calcNoiseHeight(x, y, 0.00015, 1);
+		// const roll = TerrainGenerator.calcNoiseHeight(x, y, 0.00015, 1);
 		// if (roll)
 		h = clamp(h, minHeight, maxHeight);
 
 		// Add roughness
 		const roughness = (h <= 2) ? 20 : 50 * (h / maxHeight);
-		h += DinoTerrain.calcNoiseHeight(x, y, 0.002, roughness);
+		h += TerrainGenerator.calcNoiseHeight(x, y, 0.002, roughness);
 
 		// Add ripples (negative for erosion)
 		h -= 20 * (
 			1 + Math.sin(noiseScale * x + 10 * noise.perlin3(noiseScale * x, noiseScale * 2 * y, 0))
 		);
 		h = clamp(h, minHeight, maxHeight);
-		// h += DinoTerrain.calcNoiseHeight(x, y, 0.00021, 200);
+		// h += TerrainGenerator.calcNoiseHeight(x, y, 0.00021, 200);
 		// this.validateNumbers({ h, h2 });
 		return h;
 	}
@@ -133,6 +128,7 @@ class DinoTerrain {
 		return { canvas, ctx };
 	}
 
+	/** This is meant to be overriden */
 	getTerrainTextureColor(worldX, worldY) {
 		if (worldX === 0 && worldY > 0) return [255, 255, 255];
 		if (worldY === 0 && worldX > 0) return [0, 255, 0];
@@ -140,33 +136,7 @@ class DinoTerrain {
 		// if (worldX === worldY) return [255, 255, 255];
 		// if (worldX === -worldY) return [255, 255, 0];
 		// if (worldX < 100 && worldX > -100 && worldY < 100 && worldY > -100) return [255, 0, 0];
-		let color = BASE_COLOR;
-		// TODO: Remove * 2 below
-		// TODO: Add in some other noise randomness
-		// const h = Math.round(this.calcTerrainHeight(worldX * 2, worldY * 2));
-		const h = Math.round(this.calcTerrainHeight(worldX, worldY));
-
-		// console.log(worldX, worldY, worldX % 10);
-		if (worldX % GRID_COLOR_SPACING === 0 || worldY % GRID_COLOR_SPACING === 0) {
-			if (h < 3) return GRID_LOW_COLOR;
-			return GRID_COLOR;
-		}
-		// if (worldY > 0) return [0, 0, 200];
-
-		// if (h > 10 && h < 14) return [150, 200, 200]; // coastal splash line
-		
-		if (h > 400) {
-			color = COLOR4;
-		} else if (h > 300) {
-			color = (h % 2 === 0) ? COLOR4 : COLOR3;
-		} else if (h > 250) {
-			color = (h % 4 === 0) ? BASE_COLOR : COLOR3;
-		} else if (h > 150) {
-			color = (h % 2 === 0) ? BASE_COLOR : COLOR3;
-		} else if (h > 1) {
-			color = (h % 5 === 0) ? BASE_COLOR : COLOR2;
-		}
-		return color;
+		return [100, 100, 100];
 	}
 
 	getTextureSetupData() {
@@ -196,7 +166,7 @@ class DinoTerrain {
 			stepSize,
 		} = this.getTextureSetupData();
 		const data = array;
-		const setColor = DinoTerrain.getSetColorFunction(data);
+		const setColor = TerrainGenerator.getSetColorFunction(data);
 		
 		for (let y = 0; y < height; y += 1) {
 			const yi = y * width * INDEX_PER_PIXEL;
@@ -245,7 +215,7 @@ class DinoTerrain {
 		let y;
 
 		// const textureData = this.getTextureSetupData().array;
-		// const setColor = DinoTerrain.getSetColorFunction(textureData);
+		// const setColor = TerrainGenerator.getSetColorFunction(textureData);
 
 		for (y = 0; y < dataSize; y += 1) {
 			if (!heights[y]) heights[y] = [];
@@ -293,6 +263,8 @@ class DinoTerrain {
 
 		// document.getElementById('map').innerHTML = '';
 		// document.getElementById('map').appendChild(image);
+
+		// Returns a "chunk" object
 		return {
 			color: this.terrainColor, // (chunkCoords[X] - chunkCoords[Y] === 0) ? 0x55ffbb : 0x66eeaa,
 			// textureImage,
@@ -338,4 +310,4 @@ class DinoTerrain {
 	}
 }
 
-export default DinoTerrain;
+export default TerrainGenerator;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 // import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import ModelManager from './ModelManager.js';
+import ModelManager from './triludo/ModelManager.js';
 import models from './models.js';
 
 function setupScene() {
