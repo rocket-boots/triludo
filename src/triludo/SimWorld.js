@@ -21,6 +21,7 @@ class SimWorld {
 			TerrainGeneratorClass = TerrainGenerator, // recommended
 			startWorldTime, // optional
 			physics = true,
+			gravity = -9.8, // meters per second squared
 		} = options;
 		// Classes
 		this.ItemClass = ItemClass;
@@ -35,6 +36,9 @@ class SimWorld {
 		// Max spawn distance should be somwhat similar to half the size of all the chunks being shown
 		this.spawnRadii = [this.spawnActorDistance, 3500];
 		this.despawnRadius = this.spawnRadii[1] * 1.5;
+		// The object containing ALL entities
+		this.allEntities = {};
+		this.allEntityIds = [];
 		// this.loop = new Looper();
 		this.players = [];
 		this.spirits = [];
@@ -45,19 +49,89 @@ class SimWorld {
 		this.worldTimePerGameTime = 100; // originally 200
 		// Instantiate things
 		this.terrainGen = new this.TerrainGeneratorClass();
-		this.physicsWorld = new CANNON.World({
-			gravity: new CANNON.Vec3(0, 0, -90.8), // TODO: determine based on grid units to meter conversion
+		this.physicsWorld = (physics) ? new CANNON.World({
+			gravity: new CANNON.Vec3(0, 0, gravity * 10), // TODO: determine based on grid units to meter conversion
+		}) : null;
+	}
+
+	forEachEntity(fn, options = {}) {
+		const { includeRemoved = false } = options;
+		const len = this.allEntityIds.length;
+		for (let i = 0; i < len; i += 1) {
+			const entId = this.allEntityIds[i];
+			const ent = this.allEntities[entId];
+			if (!ent.remove || includeRemoved) { // Skip removed entities
+				fn(ent, entId);
+			}
+		}
+	}
+
+	static makeEntityPhysicsShape(ent) {
+		const { size } = ent;
+		const shapeName = ent.physicsShape || ent.shape || 'Box';
+		const shapeCaps = shapeName.toUpperCase();
+		if (shapeCaps === 'BOX') {
+			const { width = size, height = size, depth = size } = ent;
+			const halfExtents = new CANNON.Vec3(height, width, depth); // TODO: Check that these are in the correct spot
+			return new CANNON.Box(halfExtents);
+		}
+		if (shapeCaps === 'SPHERE') {
+			const { radius = size } = ent;
+			return new CANNON.Sphere(radius);
+		}
+		// TODO: Add other shapes as needed: ConvexyPolyhedron, Particle, Plane, Heightfield, Trimesh
+		// https://pmndrs.github.io/cannon-es/docs/classes/Shape.html
+		return null;
+	}
+
+	makeEntityPhysicsBody(ent) {
+		const { mass, staticType } = ent;
+		if (!mass && !staticType) {
+			console.warn('No mass and not static. Something is wrong here.');
+		}
+		const shape = SimWorld.makeEntityPhysicsShape(ent);
+		const body = new CANNON.Body({
+			// type: CANNON.Body.STATIC,
+			shape,
+			mass,
 		});
+		this.syncPhysicsBodyToEntity(body, ent);
+		this.physicsWorld.addBody(body);
+	}
+
+	syncEntityToPhysicsBody(ent, bodyParam) {
+		let body = bodyParam || ent.physicsBody;
+		if (!body) { // No body?
+			// If no shape, then physics aren't desired for this entity, so do nothing
+			if (!ent.physicsShape) return;
+			body = this.makeEntityPhysicsBody(ent);
+		}
+		const { x, y, z } = body.position;
+		ent.coords = [x, y, z];
+		ent.quaternion = body.quaternion;
+	}
+
+	syncPhysicsBodyToEntity(body, ent) {
+		const [x, y, z] = ent.coords;
+		body.position.set(x, y, z);
+		if (ent.quaternion) body.quaternion.set(ent.quaternion);
+		ent.physicsBody = body;
+	}
+
+	setupPhysicalEntities() {
+		this.forEachEntity((ent) => this.makeEntityPhysicsBody(ent));
 	}
 
 	setup() {
-		// TODO: Remove test code below
+		this.setupPhysicalEntities();
 		const groundBody = new CANNON.Body({
 			type: CANNON.Body.STATIC,
 			shape: new CANNON.Plane(),
 		});
 		groundBody.quaternion.setFromEuler(0, 0, 0); // (-Math.PI / 2, 0, 0);
 		this.physicsWorld.addBody(groundBody);
+		// TODO: Remove test code below
+		/*
 		const radius = 500;
 		const sphereBody = new CANNON.Body({
 			mass: 5,
@@ -65,7 +139,12 @@ class SimWorld {
 		});
 		sphereBody.position.set(2000, 200, 5000);
 		this.physicsWorld.addBody(sphereBody);
-		this.cannonDebugger = new CannonDebugger(this.debugScene, this.physicsWorld, { color: 0xff0000 });
+		*/
+		if (this.debugScene) {
+			this.cannonDebugger = new CannonDebugger(
+				this.debugScene, this.physicsWorld, { color: 0xff0000 },
+			);
+		}
 	}
 
 	update(t) {
@@ -75,7 +154,8 @@ class SimWorld {
 		this.worldTime = (this.worldTime + deltaTWorldTime) % SECONDS_PER_DAY;
 		this.actors.forEach((actor) => actor.update(t, this));
 		this.physicsWorld.fixedStep();
-		this.cannonDebugger.update();
+		if (this.cannonDebugger) this.cannonDebugger.update();
+		this.forEachEntity((ent) => this.syncEntityToPhysicsBody(ent));
 		return {};
 	}
 
@@ -93,6 +173,23 @@ class SimWorld {
 		const angle = Random.randomAngle();
 		const [x, y] = ArrayCoords.polarToCartesian(r, angle);
 		return ArrayCoords.add(coords, [x, y, 0]);
+	}
+
+	getAllEntitiesArray() {
+		// TODO: Optimize this
+		const entities = this.allEntityIds.map((entId) => this.allEntities[entId]);
+		return [...this.actors, ...this.items, ...entities];
+	}
+
+	addEntity(entObj = {}) {
+		let { entityId } = entObj;
+		if (!entityId) {
+			entityId = Entity.makeEntityId();
+			entObj.entityId = entityId;
+		}
+		if (this.allEntities[entityId]) throw new Error('Cannot add entity that already exists');
+		this.allEntities[entityId] = entObj; // Note that we're not cloning
+		this.allEntityIds.push(entityId);
 	}
 
 	makeCharacter(charProperties) {
@@ -125,6 +222,7 @@ class SimWorld {
 			const [x, y] = ArrayCoords.polarToCartesian(Number(item.randomAtRadius), angle);
 			item.coords = [x, y, 0];
 		}
+		this.addEntity(item);
 		return item;
 	}
 
@@ -132,6 +230,23 @@ class SimWorld {
 		const item = this.makeItem(itemData);
 		this.items.push(item);
 		return item;
+	}
+
+	setHeightToTerrain(param) {
+		if (param.forEach) {
+			param.forEach((entity) => this.setHeightToTerrain(entity));
+			return;
+		}
+		const entity = param;
+		const [x, y, z] = entity.coords;
+		let h = this.terrainGen.getTerrainHeight(x, y);
+		h += (entity.heightSizeOffset * entity.size);
+		const grounded = (z <= h + 1);
+		// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
+		// TODO: Find another way to determine landing from the ground for sound effects
+		// if (grounded && !entity.grounded && entity.isCharacter) this.sounds.play('footsteps');
+		// TODO: play 'land' sound instead if velocity downward is high
+		entity.setGrounded(grounded, h);
 	}
 
 	/** Returns an array of (0) the distance to the nearest thing, and (1) the thing */

@@ -80,9 +80,12 @@ const ITEMS = [
 ];
 
 export default class DinoWorld extends SimWorld {
-	// constructor(...args) {
-	// 	super(...args);
-	// }
+	constructor(...args) {
+		super(...args);
+		// TODO: remove testing code
+		this.addEntity({ coords: [300, 60, 60], size: 50, shape: 'sphere', mass: 10, flatShading: true });
+		this.addEntity({ coords: [300, 62, 150], size: 50, shape: 'sphere', mass: 10, flatShading: true });
+	}
 
 	getTotalParts() { // eslint-disable-line
 		return PARTS.length;
@@ -126,5 +129,11 @@ export default class DinoWorld extends SimWorld {
 			this.addNewItem(itemData);
 		});
 		// this.addNewTrees(32, focusCoords);
+		this.items.forEach((item) => {
+			if (item.rooted) {
+				this.setHeightToTerrain(item);
+			}
+			if (item.isTimeMachine) this.timeMachine = item;
+		});
 	}
 }

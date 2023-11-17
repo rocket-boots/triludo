@@ -1,9 +1,8 @@
 import { ArrayCoords, Speaker, PointerLocker, averageAngles, HALF_PI, PI, TWO_PI, TAU } from 'rocket-boots';
 
-import DinoScene from './DinoScene.js';
+import DinoScene from './triludo/SceneManager.js';
 import GenericGame from './triludo/GenericGame.js';
 import DinoWorld from './DinoWorld.js';
-import TerrainGenerator from './triludo/TerrainGenerator.js';
 import Actor from './Actor.js';
 import DinoSoundController from './DinoSoundController.js';
 import DinoItem from './DinoItem.js';
@@ -118,7 +117,7 @@ class DinoGame extends GenericGame {
 		const amount = t / 40;
 		const messages = this.world.ItemClass.interact(iItem, this.mainCharacter, amount);
 		if (messages) this.interface.addToLog(messages);
-		this.setHeightToTerrain(iItem);
+		this.world.setHeightToTerrain(iItem);
 	}
 
 	handleCommandsDown(commands = [], t = DEFAULT_TIME) {
@@ -164,7 +163,7 @@ class DinoGame extends GenericGame {
 				// this.sounds.play('collect');
 				// const messages = this.ItemClass.interact(iItem, mainCharacter, 1);
 				// if (messages) this.interface.addToLog(messages);
-				// this.setHeightToTerrain(iItem);
+				// this.world.setHeightToTerrain(iItem);
 			}
 		} else if (firstCommand === 'jump') {
 			// const didJump = mainCharacter.jump();
@@ -177,20 +176,8 @@ class DinoGame extends GenericGame {
 		}
 	}
 
-	// TODO: Move to SimWorld?
-	setHeightToTerrain(entity) {
-		const [x, y, z] = entity.coords;
-		let h = this.world.terrainGen.getTerrainHeight(x, y);
-		h += (entity.heightSizeOffset * entity.size);
-		const grounded = (z <= h + 1);
-		// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
-		if (grounded && !entity.grounded && entity.isCharacter) this.sounds.play('footsteps');
-		// TODO: play 'land' sound instead if velocity downward is high
-		entity.setGrounded(grounded, h);
-	}
-
 	checkWin() {
-		const win = this.timeMachine.damage === 0;
+		const win = this.timeMachine?.damage === 0;
 		if (win) this.transition('win');
 		return win;
 	}
@@ -239,7 +226,7 @@ class DinoGame extends GenericGame {
 		const terrainChunks = this.world.terrainGen.makeTerrainChunks(mainCharacter.coords, chunkRadius);
 		// Update actors
 		// TODO: Move to SimWorld
-		world.actors.forEach((actor) => this.setHeightToTerrain(actor));
+		this.world.setHeightToTerrain(world.actors);
 		// Clean items and actors to remove missing/dead
 		world.despawn(mainCharacter.coords); // TODO: move to SimWorld
 
@@ -281,7 +268,7 @@ class DinoGame extends GenericGame {
 			.sort((a, b) => (a.sortAngle - b.sortAngle));
 	}
 
-	assembleRenderData(gameTickData = {}) { // You should overwrite this method
+	assembleRenderData(gameTickData = {}) {
 		const { terrainChunks, scanResults } = gameTickData;
 		// Assemble data needed to render
 		const {
@@ -292,7 +279,8 @@ class DinoGame extends GenericGame {
 		const [x, y, z] = mainCharacter.coords;
 		const [, iItem] = this.world.findNearestInRangeInteractableItem(mainCharacter.coords);
 		const { sunLightAngle } = this.world.getSun();
-		const entities = [...this.world.actors, ...this.world.items];
+		const entities = this.world.getAllEntitiesArray();
+		// console.log(entities);
 		const sceneUpdateOptions = {
 			terrainChunks,
 			// cameraPosition: [-(zoom ** 1.5), -zoom / 2, 30 + (zoom ** 2)],
@@ -325,16 +313,9 @@ class DinoGame extends GenericGame {
 
 	buildWorld() {
 		this.world.build(this.mainCharacter.coords);
-		this.world.items.forEach((item) => {
-			if (item.rooted) {
-				this.setHeightToTerrain(item);
-			}
-			if (item.isTimeMachine) this.timeMachine = item;
-		});
 	}
 
 	async setup() {
-		
 		const { spirit } = this.addNewPlayer();
 		this.mainCharacter = this.world.addNewCharacter({
 			spirit,

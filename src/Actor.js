@@ -40,6 +40,11 @@ class Actor extends Entity {
 		this.jumpForce = this.walkForce * 100;
 		this.setProperties(options);
 		this.animationName = 'idle';
+		this.renderAs = 'box';
+		this.height = 40;
+		this.width = 60;
+		this.depth = 100;
+		this.physicsShape = 'Box';
 	}
 
 	getDamage() {

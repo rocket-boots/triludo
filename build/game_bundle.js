@@ -62092,14 +62092,14 @@ var game_bundle = (function () {
 
 	window.THREE = THREE;
 
-	class DinoScene {
+	class SceneManager {
 		constructor(options = {}) {
 			// Settings
 			this.gridConversion = [1, 1, -1];
 			this.coordsConversion = [1, 1, 1];
 			this.gridSquareSize = 20;
 			this.clearColor = '#fff';
-			this.fogColor = null; // DinoScene.makeColor('#555'); // leave blank to use option's fogColor or clearColor
+			this.fogColor = null; // SceneManager.makeColor('#555'); // leave blank to use option's fogColor or clearColor
 			this.sunLightAngle = Math.PI;
 			this.sunLightDistance = 10000; // Not sure this matters?
 			this.sunLightMaxIntensity = 0.5;
@@ -62251,7 +62251,7 @@ var game_bundle = (function () {
 
 		updateCamera(positionGoal, rotationGoal /* , focusGoal = new Vector3() */) {
 			if (positionGoal) {
-				this.camera.position.copy(DinoScene.convertCoordsToVector3(positionGoal));
+				this.camera.position.copy(SceneManager.convertCoordsToVector3(positionGoal));
 			}
 			this.camera.rotation.setFromVector3(rotationGoal, 'ZXY');
 			// this.camera.lookAt(focusGoal);
@@ -62312,9 +62312,9 @@ var game_bundle = (function () {
 			} = options;
 			// Set sky and sunlight
 			if (skyColor && skyColor !== this.clearColor) {
-				this.clearColor = DinoScene.makeColor(skyColor);
+				this.clearColor = SceneManager.makeColor(skyColor);
 				this.renderer.setClearColor(this.clearColor);
-				this.scene.fog.color = DinoScene.makeColor(fogColor || this.fogColor || skyColor);
+				this.scene.fog.color = SceneManager.makeColor(fogColor || this.fogColor || skyColor);
 			}
 			if (typeof sunLightAngle === 'number' && sunLightAngle !== this.sunLightAngle) {
 				this.setDirLightByAngle(sunLightAngle);
@@ -62323,22 +62323,23 @@ var game_bundle = (function () {
 			if (cameraPosition || cameraRotationGoalArray) {
 				const [x = 0, y = 0, z = 0] = cameraRotationGoalArray;
 				this.updateCamera(
-					DinoScene.convertCoordsToVector3(cameraPosition),
+					SceneManager.convertCoordsToVector3(cameraPosition),
 					(new Vector3(x, y, z)),
 				);
-				// this.camera.position.copy(DinoScene.convertCoordsToVector3(cameraPosition));
+				// this.camera.position.copy(SceneManager.convertCoordsToVector3(cameraPosition));
 				// this.camera.lookAt(new Vector3());
 			}
 			if (worldCoords) {
-				this.worldGroup.position.copy(DinoScene.convertCoordsToVector3(worldCoords));
+				this.worldGroup.position.copy(SceneManager.convertCoordsToVector3(worldCoords));
 			}
 			if (entities) {
 				const visibleEntityUuids = []; // "visible" as in "included in the update"
 				entities.forEach((entity) => {
 					let sceneObj = this.entitySceneObjects[entity.entityId];
 					if (sceneObj) {
-						const pos = DinoScene.convertCoordsToVector3(entity.coords);
+						const pos = SceneManager.convertCoordsToVector3(entity.coords);
 						sceneObj.position.copy(pos);
+						if (entity.quaternion) sceneObj.quaternion.copy(entity.quaternion);
 						// sceneObj.setRotationFromAxisAngle(sceneObj.up, 0);
 						// sceneObj.rotateOnAxis(sceneObj.up, Math.PI); // -entity.facing);
 						// Look up the model's base rotation and use that as the basis
@@ -62360,7 +62361,7 @@ var game_bundle = (function () {
 							// if (entity.isDinosaur) console.log(JSON.stringify(sceneObj.rotation));
 						}
 						// if (entity.lookAt) {
-						// 	const look = sceneObj.localToWorld(DinoScene.convertCoordsToVector3(entity.lookAt));
+						// 	const look = sceneObj.localToWorld(SceneManager.convertCoordsToVector3(entity.lookAt));
 						// 	sceneObj.lookAt(look);
 						// }
 					} else {
@@ -62417,7 +62418,7 @@ var game_bundle = (function () {
 		}
 
 		// async addNewTerrainByHeightMap(heightMapImageSrc) {
-		// 	const heightMap = await DinoScene.loadTexture(heightMapImageSrc);
+		// 	const heightMap = await SceneManager.loadTexture(heightMapImageSrc);
 		// 	const terrain = this.makeTerrain(heightMap);
 		// 	window.terrain = terrain;
 		// 	this.chunkTerrains.push(terrain);
@@ -62556,18 +62557,21 @@ var game_bundle = (function () {
 			const materialOptions = {};
 			if (color) materialOptions.color = color;
 			if (entity.texture) materialOptions.map = texture;
+			if (entity.flatShading) materialOptions.flatShading = true;
 			const material = new MeshStandardMaterial(materialOptions);
 			return material;
 		}
 
 		addNewWorldEntity(entity) {
-			if (!entity.renderAs) return null;
-			const { renderAs, size } = entity;
+			const renderAs = entity.renderAs || entity.shape;
+			if (!renderAs) return null;
+			const { size } = entity;
 			// let texture; // get from entity.texture
 			let sceneObj; // mesh, plane, sprite, etc.
-			let color = (entity.color) ? DinoScene.makeColor(entity.color) : null;
+			let color = (entity.color) ? SceneManager.makeColor(entity.color) : null;
 			if (renderAs === 'box') {
-				const geometry = new BoxGeometry(size, size, size);
+				const { width = size, height = size, depth = size } = entity;
+				const geometry = new BoxGeometry(width, height, depth);
 				const material = this.makeEntityMaterial(entity, color);
 				sceneObj = new Mesh(geometry, material);
 			} else if (renderAs === 'sphere') {
@@ -66082,9 +66086,10 @@ var game_bundle = (function () {
 
 	class Entity {
 		constructor(properties = {}) {
-			this.entityId = Random$1.uniqueString();
+			this.entityId = Entity.makeEntityId();
 			this.isEntity = true;
 			this.coords = [0, 0, 0];
+			this.quaternion = null;
 			this.facing = 0; // radians - 0 --> along the x axis
 			// Positive radians are turning left (anti-clockwise)
 			// Negative radians are turning right (clockwise)
@@ -66098,6 +66103,8 @@ var game_bundle = (function () {
 			this.movementForce = 0;
 			this.tags = [];
 			this.renderAs = 'box';
+			this.physicsShape = 'box';
+			this.physicsBody = null;
 			this.color = 0xffffff;
 			this.inventory = [];
 			this.inventorySize = 0;
@@ -66110,9 +66117,13 @@ var game_bundle = (function () {
 			this.setProperties(properties);
 		}
 
+		static makeEntityId() {
+			return Random$1.uniqueString();
+		}
+
 		setProperties(properties = {}) {
 			Object.keys(properties).forEach((key) => {
-				this[key] = JSON.parse(JSON.stringify(properties[key]));
+				this[key] = JSON.parse(JSON.stringify(properties[key])); // clone
 			});
 		}
 
@@ -76124,6 +76135,7 @@ var game_bundle = (function () {
 				TerrainGeneratorClass = TerrainGenerator, // recommended
 				startWorldTime, // optional
 				physics = true,
+				gravity = -9.8, // meters per second squared
 			} = options;
 			// Classes
 			this.ItemClass = ItemClass;
@@ -76138,6 +76150,9 @@ var game_bundle = (function () {
 			// Max spawn distance should be somwhat similar to half the size of all the chunks being shown
 			this.spawnRadii = [this.spawnActorDistance, 3500];
 			this.despawnRadius = this.spawnRadii[1] * 1.5;
+			// The object containing ALL entities
+			this.allEntities = {};
+			this.allEntityIds = [];
 			// this.loop = new Looper();
 			this.players = [];
 			this.spirits = [];
@@ -76148,27 +76163,102 @@ var game_bundle = (function () {
 			this.worldTimePerGameTime = 100; // originally 200
 			// Instantiate things
 			this.terrainGen = new this.TerrainGeneratorClass();
-			this.physicsWorld = new World({
-				gravity: new Vec3(0, 0, -90.8), // TODO: determine based on grid units to meter conversion
+			this.physicsWorld = (physics) ? new World({
+				gravity: new Vec3(0, 0, gravity * 10), // TODO: determine based on grid units to meter conversion
+			}) : null;
+		}
+
+		forEachEntity(fn, options = {}) {
+			const { includeRemoved = false } = options;
+			const len = this.allEntityIds.length;
+			for (let i = 0; i < len; i += 1) {
+				const entId = this.allEntityIds[i];
+				const ent = this.allEntities[entId];
+				if (!ent.remove || includeRemoved) { // Skip removed entities
+					fn(ent, entId);
+				}
+			}
+		}
+
+		static makeEntityPhysicsShape(ent) {
+			const { size } = ent;
+			const shapeName = ent.physicsShape || ent.shape || 'Box';
+			const shapeCaps = shapeName.toUpperCase();
+			if (shapeCaps === 'BOX') {
+				const { width = size, height = size, depth = size } = ent;
+				const halfExtents = new Vec3(height, width, depth); // TODO: Check that these are in the correct spot
+				return new Box(halfExtents);
+			}
+			if (shapeCaps === 'SPHERE') {
+				const { radius = size } = ent;
+				return new Sphere(radius);
+			}
+			// TODO: Add other shapes as needed: ConvexyPolyhedron, Particle, Plane, Heightfield, Trimesh
+			// https://pmndrs.github.io/cannon-es/docs/classes/Shape.html
+			return null;
+		}
+
+		makeEntityPhysicsBody(ent) {
+			const { mass, staticType } = ent;
+			if (!mass && !staticType) {
+				console.warn('No mass and not static. Something is wrong here.');
+			}
+			const shape = SimWorld.makeEntityPhysicsShape(ent);
+			const body = new Body({
+				// type: CANNON.Body.STATIC,
+				shape,
+				mass,
 			});
+			this.syncPhysicsBodyToEntity(body, ent);
+			this.physicsWorld.addBody(body);
+		}
+
+		syncEntityToPhysicsBody(ent, bodyParam) {
+			let body = bodyParam || ent.physicsBody;
+			if (!body) { // No body?
+				// If no shape, then physics aren't desired for this entity, so do nothing
+				if (!ent.physicsShape) return;
+				body = this.makeEntityPhysicsBody(ent);
+			}
+			const { x, y, z } = body.position;
+			ent.coords = [x, y, z];
+			ent.quaternion = body.quaternion;
+		}
+
+		syncPhysicsBodyToEntity(body, ent) {
+			const [x, y, z] = ent.coords;
+			body.position.set(x, y, z);
+			if (ent.quaternion) body.quaternion.set(ent.quaternion);
+			ent.physicsBody = body;
+		}
+
+		setupPhysicalEntities() {
+			this.forEachEntity((ent) => this.makeEntityPhysicsBody(ent));
 		}
 
 		setup() {
-			// TODO: Remove test code below
+			this.setupPhysicalEntities();
 			const groundBody = new Body({
 				type: Body.STATIC,
 				shape: new Plane(),
 			});
 			groundBody.quaternion.setFromEuler(0, 0, 0); // (-Math.PI / 2, 0, 0);
 			this.physicsWorld.addBody(groundBody);
+			// TODO: Remove test code below
+			/*
 			const radius = 500;
-			const sphereBody = new Body({
+			const sphereBody = new CANNON.Body({
 				mass: 5,
-				shape: new Sphere(radius),
+				shape: new CANNON.Sphere(radius),
 			});
 			sphereBody.position.set(2000, 200, 5000);
 			this.physicsWorld.addBody(sphereBody);
-			this.cannonDebugger = new CannonDebugger(this.debugScene, this.physicsWorld, { color: 0xff0000 });
+			*/
+			if (this.debugScene) {
+				this.cannonDebugger = new CannonDebugger(
+					this.debugScene, this.physicsWorld, { color: 0xff0000 },
+				);
+			}
 		}
 
 		update(t) {
@@ -76178,7 +76268,8 @@ var game_bundle = (function () {
 			this.worldTime = (this.worldTime + deltaTWorldTime) % SECONDS_PER_DAY;
 			this.actors.forEach((actor) => actor.update(t, this));
 			this.physicsWorld.fixedStep();
-			this.cannonDebugger.update();
+			if (this.cannonDebugger) this.cannonDebugger.update();
+			this.forEachEntity((ent) => this.syncEntityToPhysicsBody(ent));
 			return {};
 		}
 
@@ -76196,6 +76287,23 @@ var game_bundle = (function () {
 			const angle = Random$1.randomAngle();
 			const [x, y] = ArrayCoords.polarToCartesian(r, angle);
 			return ArrayCoords.add(coords, [x, y, 0]);
+		}
+
+		getAllEntitiesArray() {
+			// TODO: Optimize this
+			const entities = this.allEntityIds.map((entId) => this.allEntities[entId]);
+			return [...this.actors, ...this.items, ...entities];
+		}
+
+		addEntity(entObj = {}) {
+			let { entityId } = entObj;
+			if (!entityId) {
+				entityId = Entity.makeEntityId();
+				entObj.entityId = entityId;
+			}
+			if (this.allEntities[entityId]) throw new Error('Cannot add entity that already exists');
+			this.allEntities[entityId] = entObj; // Note that we're not cloning
+			this.allEntityIds.push(entityId);
 		}
 
 		makeCharacter(charProperties) {
@@ -76228,6 +76336,7 @@ var game_bundle = (function () {
 				const [x, y] = ArrayCoords.polarToCartesian(Number(item.randomAtRadius), angle);
 				item.coords = [x, y, 0];
 			}
+			this.addEntity(item);
 			return item;
 		}
 
@@ -76235,6 +76344,23 @@ var game_bundle = (function () {
 			const item = this.makeItem(itemData);
 			this.items.push(item);
 			return item;
+		}
+
+		setHeightToTerrain(param) {
+			if (param.forEach) {
+				param.forEach((entity) => this.setHeightToTerrain(entity));
+				return;
+			}
+			const entity = param;
+			const [x, y, z] = entity.coords;
+			let h = this.terrainGen.getTerrainHeight(x, y);
+			h += (entity.heightSizeOffset * entity.size);
+			const grounded = (z <= h + 1);
+			// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
+			// TODO: Find another way to determine landing from the ground for sound effects
+			// if (grounded && !entity.grounded && entity.isCharacter) this.sounds.play('footsteps');
+			// TODO: play 'land' sound instead if velocity downward is high
+			entity.setGrounded(grounded, h);
 		}
 
 		/** Returns an array of (0) the distance to the nearest thing, and (1) the thing */
@@ -76458,9 +76584,12 @@ var game_bundle = (function () {
 	];
 
 	class DinoWorld extends SimWorld {
-		// constructor(...args) {
-		// 	super(...args);
-		// }
+		constructor(...args) {
+			super(...args);
+			// TODO: remove testing code
+			this.addEntity({ coords: [300, 60, 60], size: 50, shape: 'sphere', mass: 10, flatShading: true });
+			this.addEntity({ coords: [300, 62, 150], size: 50, shape: 'sphere', mass: 10, flatShading: true });
+		}
 
 		getTotalParts() { // eslint-disable-line
 			return PARTS.length;
@@ -76504,6 +76633,12 @@ var game_bundle = (function () {
 				this.addNewItem(itemData);
 			});
 			// this.addNewTrees(32, focusCoords);
+			this.items.forEach((item) => {
+				if (item.rooted) {
+					this.setHeightToTerrain(item);
+				}
+				if (item.isTimeMachine) this.timeMachine = item;
+			});
 		}
 	}
 
@@ -76546,6 +76681,11 @@ var game_bundle = (function () {
 			this.jumpForce = this.walkForce * 100;
 			this.setProperties(options);
 			this.animationName = 'idle';
+			this.renderAs = 'box';
+			this.height = 40;
+			this.width = 60;
+			this.depth = 100;
+			this.physicsShape = 'Box';
 		}
 
 		getDamage() {
@@ -77521,7 +77661,7 @@ var game_bundle = (function () {
 				music,
 				minMouseWheel: 0,
 				maxMouseWheel: 500,
-				SceneClass: DinoScene,
+				SceneClass: SceneManager,
 				ActorClass: Actor,
 				WorldClass: DinoWorld,
 				ItemClass: DinoItem,
@@ -77565,7 +77705,7 @@ var game_bundle = (function () {
 			const amount = t / 40;
 			const messages = this.world.ItemClass.interact(iItem, this.mainCharacter, amount);
 			if (messages) this.interface.addToLog(messages);
-			this.setHeightToTerrain(iItem);
+			this.world.setHeightToTerrain(iItem);
 		}
 
 		handleCommandsDown(commands = [], t = DEFAULT_TIME) {
@@ -77607,7 +77747,7 @@ var game_bundle = (function () {
 					// this.sounds.play('collect');
 					// const messages = this.ItemClass.interact(iItem, mainCharacter, 1);
 					// if (messages) this.interface.addToLog(messages);
-					// this.setHeightToTerrain(iItem);
+					// this.world.setHeightToTerrain(iItem);
 				}
 			} else if (firstCommand === 'jump') {
 				// const didJump = mainCharacter.jump();
@@ -77620,20 +77760,8 @@ var game_bundle = (function () {
 			}
 		}
 
-		// TODO: Move to SimWorld?
-		setHeightToTerrain(entity) {
-			const [x, y, z] = entity.coords;
-			let h = this.world.terrainGen.getTerrainHeight(x, y);
-			h += (entity.heightSizeOffset * entity.size);
-			const grounded = (z <= h + 1);
-			// have a small offset of h (+1) so things aren't in the air going from one tiny bump downwards
-			if (grounded && !entity.grounded && entity.isCharacter) this.sounds.play('footsteps');
-			// TODO: play 'land' sound instead if velocity downward is high
-			entity.setGrounded(grounded, h);
-		}
-
 		checkWin() {
-			const win = this.timeMachine.damage === 0;
+			const win = this.timeMachine?.damage === 0;
 			if (win) this.transition('win');
 			return win;
 		}
@@ -77680,7 +77808,7 @@ var game_bundle = (function () {
 			const terrainChunks = this.world.terrainGen.makeTerrainChunks(mainCharacter.coords, chunkRadius);
 			// Update actors
 			// TODO: Move to SimWorld
-			world.actors.forEach((actor) => this.setHeightToTerrain(actor));
+			this.world.setHeightToTerrain(world.actors);
 			// Clean items and actors to remove missing/dead
 			world.despawn(mainCharacter.coords); // TODO: move to SimWorld
 
@@ -77722,7 +77850,7 @@ var game_bundle = (function () {
 				.sort((a, b) => (a.sortAngle - b.sortAngle));
 		}
 
-		assembleRenderData(gameTickData = {}) { // You should overwrite this method
+		assembleRenderData(gameTickData = {}) {
 			const { terrainChunks, scanResults } = gameTickData;
 			// Assemble data needed to render
 			const {
@@ -77733,7 +77861,8 @@ var game_bundle = (function () {
 			const [x, y, z] = mainCharacter.coords;
 			const [, iItem] = this.world.findNearestInRangeInteractableItem(mainCharacter.coords);
 			const { sunLightAngle } = this.world.getSun();
-			const entities = [...this.world.actors, ...this.world.items];
+			const entities = this.world.getAllEntitiesArray();
+			// console.log(entities);
 			const sceneUpdateOptions = {
 				terrainChunks,
 				// cameraPosition: [-(zoom ** 1.5), -zoom / 2, 30 + (zoom ** 2)],
@@ -77766,16 +77895,9 @@ var game_bundle = (function () {
 
 		buildWorld() {
 			this.world.build(this.mainCharacter.coords);
-			this.world.items.forEach((item) => {
-				if (item.rooted) {
-					this.setHeightToTerrain(item);
-				}
-				if (item.isTimeMachine) this.timeMachine = item;
-			});
 		}
 
 		async setup() {
-			
 			const { spirit } = this.addNewPlayer();
 			this.mainCharacter = this.world.addNewCharacter({
 				spirit,

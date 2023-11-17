@@ -4,9 +4,10 @@ const { X, Y, Z } = ArrayCoords;
 
 class Entity {
 	constructor(properties = {}) {
-		this.entityId = Random.uniqueString();
+		this.entityId = Entity.makeEntityId();
 		this.isEntity = true;
 		this.coords = [0, 0, 0];
+		this.quaternion = null;
 		this.facing = 0; // radians - 0 --> along the x axis
 		// Positive radians are turning left (anti-clockwise)
 		// Negative radians are turning right (clockwise)
@@ -20,6 +21,8 @@ class Entity {
 		this.movementForce = 0;
 		this.tags = [];
 		this.renderAs = 'box';
+		this.physicsShape = 'box';
+		this.physicsBody = null;
 		this.color = 0xffffff;
 		this.inventory = [];
 		this.inventorySize = 0;
@@ -32,9 +35,13 @@ class Entity {
 		this.setProperties(properties);
 	}
 
+	static makeEntityId() {
+		return Random.uniqueString();
+	}
+
 	setProperties(properties = {}) {
 		Object.keys(properties).forEach((key) => {
-			this[key] = JSON.parse(JSON.stringify(properties[key]));
+			this[key] = JSON.parse(JSON.stringify(properties[key])); // clone
 		});
 	}
 
