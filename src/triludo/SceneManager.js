@@ -5,20 +5,20 @@ import { Vector3, Group, Scene, PerspectiveCamera } from 'three';
 // import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { TAU, HALF_PI, clamp } from 'rocket-boots';
 import Renderer from 'rocket-boots-three-toolbox/src/Renderer.js';
-import ModelManager from './triludo/ModelManager.js';
+import ModelManager from './ModelManager.js';
 
 // import noise from 'noise-esm';
 
 window.THREE = THREE;
 
-class DinoScene {
+class SceneManager {
 	constructor(options = {}) {
 		// Settings
 		this.gridConversion = [1, 1, -1];
 		this.coordsConversion = [1, 1, 1];
 		this.gridSquareSize = 20;
 		this.clearColor = '#fff';
-		this.fogColor = null; // DinoScene.makeColor('#555'); // leave blank to use option's fogColor or clearColor
+		this.fogColor = null; // SceneManager.makeColor('#555'); // leave blank to use option's fogColor or clearColor
 		this.sunLightAngle = Math.PI;
 		this.sunLightDistance = 10000; // Not sure this matters?
 		this.sunLightMaxIntensity = 0.5;
@@ -170,7 +170,7 @@ class DinoScene {
 
 	updateCamera(positionGoal, rotationGoal /* , focusGoal = new Vector3() */) {
 		if (positionGoal) {
-			this.camera.position.copy(DinoScene.convertCoordsToVector3(positionGoal));
+			this.camera.position.copy(SceneManager.convertCoordsToVector3(positionGoal));
 		}
 		this.camera.rotation.setFromVector3(rotationGoal, 'ZXY');
 		// this.camera.lookAt(focusGoal);
@@ -233,9 +233,9 @@ class DinoScene {
 		} = options;
 		// Set sky and sunlight
 		if (skyColor && skyColor !== this.clearColor) {
-			this.clearColor = DinoScene.makeColor(skyColor);
+			this.clearColor = SceneManager.makeColor(skyColor);
 			this.renderer.setClearColor(this.clearColor);
-			this.scene.fog.color = DinoScene.makeColor(fogColor || this.fogColor || skyColor);
+			this.scene.fog.color = SceneManager.makeColor(fogColor || this.fogColor || skyColor);
 		}
 		if (typeof sunLightAngle === 'number' && sunLightAngle !== this.sunLightAngle) {
 			this.setDirLightByAngle(sunLightAngle);
@@ -244,22 +244,23 @@ class DinoScene {
 		if (cameraPosition || cameraRotationGoalArray) {
 			const [x = 0, y = 0, z = 0] = cameraRotationGoalArray;
 			this.updateCamera(
-				DinoScene.convertCoordsToVector3(cameraPosition),
+				SceneManager.convertCoordsToVector3(cameraPosition),
 				(new Vector3(x, y, z)),
 			);
-			// this.camera.position.copy(DinoScene.convertCoordsToVector3(cameraPosition));
+			// this.camera.position.copy(SceneManager.convertCoordsToVector3(cameraPosition));
 			// this.camera.lookAt(new Vector3());
 		}
 		if (worldCoords) {
-			this.worldGroup.position.copy(DinoScene.convertCoordsToVector3(worldCoords));
+			this.worldGroup.position.copy(SceneManager.convertCoordsToVector3(worldCoords));
 		}
 		if (entities) {
 			const visibleEntityUuids = []; // "visible" as in "included in the update"
 			entities.forEach((entity) => {
 				let sceneObj = this.entitySceneObjects[entity.entityId];
 				if (sceneObj) {
-					const pos = DinoScene.convertCoordsToVector3(entity.coords);
+					const pos = SceneManager.convertCoordsToVector3(entity.coords);
 					sceneObj.position.copy(pos);
+					if (entity.quaternion) sceneObj.quaternion.copy(entity.quaternion);
 					// sceneObj.setRotationFromAxisAngle(sceneObj.up, 0);
 					// sceneObj.rotateOnAxis(sceneObj.up, Math.PI); // -entity.facing);
 					// Look up the model's base rotation and use that as the basis
@@ -283,7 +284,7 @@ class DinoScene {
 						// sceneObj.rotation.setX(entity.facing);
 					}
 					// if (entity.lookAt) {
-					// 	const look = sceneObj.localToWorld(DinoScene.convertCoordsToVector3(entity.lookAt));
+					// 	const look = sceneObj.localToWorld(SceneManager.convertCoordsToVector3(entity.lookAt));
 					// 	sceneObj.lookAt(look);
 					// }
 				} else {
@@ -342,7 +343,7 @@ class DinoScene {
 	}
 
 	// async addNewTerrainByHeightMap(heightMapImageSrc) {
-	// 	const heightMap = await DinoScene.loadTexture(heightMapImageSrc);
+	// 	const heightMap = await SceneManager.loadTexture(heightMapImageSrc);
 	// 	const terrain = this.makeTerrain(heightMap);
 	// 	window.terrain = terrain;
 	// 	this.chunkTerrains.push(terrain);
@@ -491,18 +492,21 @@ class DinoScene {
 		const materialOptions = {};
 		if (color) materialOptions.color = color;
 		if (entity.texture) materialOptions.map = texture;
+		if (entity.flatShading) materialOptions.flatShading = true;
 		const material = new THREE.MeshStandardMaterial(materialOptions);
 		return material;
 	}
 
 	addNewWorldEntity(entity) {
-		if (!entity.renderAs) return null;
-		const { renderAs, size } = entity;
+		const renderAs = entity.renderAs || entity.shape;
+		if (!renderAs) return null;
+		const { size } = entity;
 		// let texture; // get from entity.texture
 		let sceneObj; // mesh, plane, sprite, etc.
-		let color = (entity.color) ? DinoScene.makeColor(entity.color) : null;
+		let color = (entity.color) ? SceneManager.makeColor(entity.color) : null;
 		if (renderAs === 'box') {
-			const geometry = new THREE.BoxGeometry(size, size, size);
+			const { width = size, height = size, depth = size } = entity;
+			const geometry = new THREE.BoxGeometry(width, height, depth);
 			const material = this.makeEntityMaterial(entity, color);
 			sceneObj = new THREE.Mesh(geometry, material);
 		} else if (renderAs === 'sphere') {
@@ -527,4 +531,4 @@ class DinoScene {
 	}
 }
 
-export default DinoScene;
+export default SceneManager;
