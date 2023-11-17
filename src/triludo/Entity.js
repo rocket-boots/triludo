@@ -22,7 +22,9 @@ class Entity {
 		this.tags = [];
 		this.renderAs = 'box';
 		this.physicsShape = 'box';
-		this.physicsBody = null;
+		this.physicsBody = null; // Internal
+		// Sync: 1 = forwards (from body to entity), -1 = backwards (from ent to body), 0 = none
+		this.physicsSync = 1;
 		this.color = 0xffffff;
 		this.inventory = [];
 		this.inventorySize = 0;

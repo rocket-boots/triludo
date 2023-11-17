@@ -7,6 +7,7 @@ const SLOW_DIST = 500; // 25m ~ 8 ft
 class Actor extends Entity {
 	constructor(options = {}) {
 		super(options);
+		this.isActor = true;
 		this.alive = true;
 		this.mobile = true;
 		this.physics = true;
@@ -20,7 +21,6 @@ class Actor extends Entity {
 		this.sprintMultiplier = 2;
 		this.emotions = [];
 		this.spiritId = options.spiritId;
-		this.isActor = true;
 		this.lookTargetEntity = null;
 		this.lookTargetDistance = Infinity;
 		this.currentPlan = { name: 'rest', moveTarget: null };
